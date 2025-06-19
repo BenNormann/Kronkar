@@ -14,9 +14,13 @@ class Player {
         // Movement settings
         this.speed = 8;
         this.jumpForce = 8;
-        this.mouseSensitivity = 0.002;
+        this.mouseSensitivity = 0.003;
         this.isGrounded = false;
         this.gravity = -20;
+        
+        // Camera smoothing
+        this.cameraRotationTarget = new BABYLON.Vector3(0, 0, 0);
+        this.cameraRotationSpeed = 50; // Smoothing factor - higher = more responsive
         
         // Shooting
         this.canShoot = true;
@@ -38,6 +42,7 @@ class Player {
         };
         
         this.mouseMovement = { x: 0, y: 0 };
+        this.mouseAccumulation = { x: 0, y: 0 };
         
         this.setupControls();
     }
@@ -88,8 +93,12 @@ class Player {
         // Mouse input
         document.addEventListener('mousemove', (event) => {
             if (this.isPointerLocked) {
-                this.mouseMovement.x = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
-                this.mouseMovement.y = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+                const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+                const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+                
+                // Accumulate mouse movement for smoother input
+                this.mouseAccumulation.x += movementX;
+                this.mouseAccumulation.y += movementY;
             }
         });
         
@@ -183,17 +192,27 @@ class Player {
     
     updateCamera(deltaTime) {
         if (this.isPointerLocked) {
-            // Apply mouse movement to camera rotation
-            this.camera.rotation.y += this.mouseMovement.x * this.mouseSensitivity;
-            this.camera.rotation.x += this.mouseMovement.y * this.mouseSensitivity;
+            // Update target rotation based on accumulated mouse movement
+            this.cameraRotationTarget.y += this.mouseAccumulation.x * this.mouseSensitivity;
+            this.cameraRotationTarget.x += this.mouseAccumulation.y * this.mouseSensitivity;
             
-            // Clamp vertical rotation
-            this.camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.camera.rotation.x));
+            // Clamp vertical rotation target
+            this.cameraRotationTarget.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.cameraRotationTarget.x));
             
-            // Reset mouse movement
-            this.mouseMovement.x = 0;
-            this.mouseMovement.y = 0;
+            // Smoothly interpolate camera rotation towards target using deltaTime
+            const lerpFactor = Math.min(1.0, this.cameraRotationSpeed * deltaTime);
+            
+            this.camera.rotation.x = this.lerp(this.camera.rotation.x, this.cameraRotationTarget.x, lerpFactor);
+            this.camera.rotation.y = this.lerp(this.camera.rotation.y, this.cameraRotationTarget.y, lerpFactor);
+            
+            // Reset accumulated mouse movement
+            this.mouseAccumulation.x = 0;
+            this.mouseAccumulation.y = 0;
         }
+    }
+    
+    lerp(start, end, factor) {
+        return start + (end - start) * factor;
     }
     
     updateShooting(deltaTime) {
@@ -306,10 +325,23 @@ class Player {
             // Just gained pointer lock, set flag to prevent immediate shooting
             this.justGainedPointerLock = true;
             
+            // Initialize camera rotation targets to current camera rotation
+            this.cameraRotationTarget.x = this.camera.rotation.x;
+            this.cameraRotationTarget.y = this.camera.rotation.y;
+            this.cameraRotationTarget.z = this.camera.rotation.z;
+            
+            // Clear mouse accumulation to prevent sudden jumps
+            this.mouseAccumulation.x = 0;
+            this.mouseAccumulation.y = 0;
+            
             // Clear the flag after a short delay
             setTimeout(() => {
                 this.justGainedPointerLock = false;
             }, 100);
+        } else {
+            // Lost pointer lock, clear any accumulated mouse movement
+            this.mouseAccumulation.x = 0;
+            this.mouseAccumulation.y = 0;
         }
     }
 }

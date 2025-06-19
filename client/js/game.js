@@ -170,31 +170,50 @@ class Game {
     }
     
     setupInputs() {
-        // Pointer lock for FPS controls
-        this.canvas.addEventListener('click', (event) => {
+        // Pointer lock for FPS controls - handle both canvas and welcome overlay clicks
+        const requestPointerLock = (event) => {
             if (!this.isPointerLocked && this.gameStarted) {
                 this.canvas.requestPointerLock();
                 // Prevent this click from triggering shooting
                 event.preventDefault();
                 event.stopPropagation();
             }
-        });
+        };
         
-        document.addEventListener('pointerlockchange', () => {
+        this.canvas.addEventListener('click', requestPointerLock);
+        
+        // Also handle clicks on the welcome overlay
+        const clickToStart = document.getElementById('clickToStart');
+        if (clickToStart) {
+            clickToStart.addEventListener('click', requestPointerLock);
+        }
+        
+        // Handle pointer lock change events (different browsers use different event names)
+        const handlePointerLockChange = () => {
             this.isPointerLocked = document.pointerLockElement === this.canvas;
             this.canvas.style.cursor = this.isPointerLocked ? 'none' : 'default';
             
-            // Hide click to start message when pointer lock is gained
+            // Hide click to start message when pointer lock is gained, show when lost
             const clickToStart = document.getElementById('clickToStart');
             if (clickToStart) {
-                clickToStart.style.display = this.isPointerLocked ? 'none' : 'block';
+                if (this.isPointerLocked) {
+                    clickToStart.style.display = 'none';
+                } else if (this.gameStarted) {
+                    // Only show the click to start if the game has started
+                    clickToStart.style.display = 'block';
+                }
             }
             
             // Notify player about pointer lock state change
             if (this.player) {
                 this.player.onPointerLockChange(this.isPointerLocked);
             }
-        });
+        };
+        
+        // Add event listeners for different browsers
+        document.addEventListener('pointerlockchange', handlePointerLockChange);
+        document.addEventListener('mozpointerlockchange', handlePointerLockChange);
+        document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
         
         // ESC to release pointer lock
         document.addEventListener('keydown', (event) => {
@@ -227,9 +246,18 @@ class Game {
     }
     
     update() {
-        const now = Date.now();
-        const deltaTime = (now - this.lastUpdateTime) / 1000;
+        const now = performance.now();
+        let deltaTime = (now - this.lastUpdateTime) / 1000;
+        
+        // Initialize lastUpdateTime on first run
+        if (this.lastUpdateTime === 0) {
+            deltaTime = 1/60; // Assume 60fps for first frame
+        }
+        
         this.lastUpdateTime = now;
+        
+        // Cap deltaTime to prevent huge jumps
+        deltaTime = Math.min(deltaTime, 1/30); // Max 30fps minimum
         
         if (!this.gameStarted) return;
         
