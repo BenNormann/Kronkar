@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kronkar FPS</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+            cursor: none;
+        }
+
+        #gameUI {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            opacity: 0.8;
+        }
+
+        #crosshair::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 4px;
+            background: #fff;
+            border-radius: 50%;
+        }
+
+        #healthBar {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 200px;
+            height: 20px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 2px solid #fff;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #healthFill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00);
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+
+        #healthText {
+            position: absolute;
+            bottom: 45px;
+            left: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        #playerCount {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #deathScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            display: none;
+            pointer-events: all;
+        }
+
+        #deathScreen h2 {
+            font-size: 48px;
+            color: #ff0000;
+            margin-bottom: 20px;
+        }
+
+        #respawnButton {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        #respawnButton:hover {
+            background: #005a9e;
+        }
+
+        #loadingScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        #loadingText {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+
+        #connectionStatus {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .connected {
+            color: #00ff00;
+        }
+
+        .disconnected {
+            color: #ff0000;
+        }
+
+        .connecting {
+            color: #ffff00;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+        }
+
+        #instructions h3 {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        #instructions ul {
+            list-style: none;
+        }
+
+        #instructions li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="gameUI">
+        <div id="crosshair"></div>
+        
+        <div id="healthText">Health</div>
+        <div id="healthBar">
+            <div id="healthFill"></div>
+        </div>
+        
+        <div id="playerCount">Players: 0</div>
+        
+        <div id="connectionStatus" class="connecting">Connecting...</div>
+        
+        <div id="instructions">
+            <h3>Controls</h3>
+            <ul>
+                <li>WASD - Move</li>
+                <li>Mouse - Look around</li>
+                <li>Space - Jump</li>
+                <li>Left Click - Shoot</li>
+                <li>ESC - Release mouse</li>
+            </ul>
+        </div>
+        
+        <div id="deathScreen">
+            <h2>YOU DIED</h2>
+            <p>Respawning in <span id="respawnTimer">3</span> seconds...</p>
+            <button id="respawnButton" style="display: none;">Respawn Now</button>
+        </div>
+    </div>
+    
+    <div id="loadingScreen">
+        <div>Loading Kronkar FPS...</div>
+        <div id="loadingText">Initializing game engine...</div>
+    </div>
+
+    <!-- Babylon.js -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    
+    <!-- Socket.IO Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- Game Scripts -->
+    <script src="js/game.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/ui.js"></script>
+</body>
+</html> 
