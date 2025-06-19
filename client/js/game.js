@@ -171,15 +171,29 @@ class Game {
     
     setupInputs() {
         // Pointer lock for FPS controls
-        this.canvas.addEventListener('click', () => {
+        this.canvas.addEventListener('click', (event) => {
             if (!this.isPointerLocked && this.gameStarted) {
                 this.canvas.requestPointerLock();
+                // Prevent this click from triggering shooting
+                event.preventDefault();
+                event.stopPropagation();
             }
         });
         
         document.addEventListener('pointerlockchange', () => {
             this.isPointerLocked = document.pointerLockElement === this.canvas;
             this.canvas.style.cursor = this.isPointerLocked ? 'none' : 'default';
+            
+            // Hide click to start message when pointer lock is gained
+            const clickToStart = document.getElementById('clickToStart');
+            if (clickToStart) {
+                clickToStart.style.display = this.isPointerLocked ? 'none' : 'block';
+            }
+            
+            // Notify player about pointer lock state change
+            if (this.player) {
+                this.player.onPointerLockChange(this.isPointerLocked);
+            }
         });
         
         // ESC to release pointer lock
@@ -200,6 +214,12 @@ class Game {
         const loadingScreen = document.getElementById('loadingScreen');
         if (loadingScreen) {
             loadingScreen.style.display = 'none';
+        }
+        
+        // Show click to start message
+        const clickToStart = document.getElementById('clickToStart');
+        if (clickToStart) {
+            clickToStart.style.display = 'block';
         }
         
         this.gameStarted = true;

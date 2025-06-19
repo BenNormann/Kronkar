@@ -194,6 +194,27 @@
         #instructions li {
             margin-bottom: 5px;
         }
+
+        #clickToStart {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 18px;
+            text-align: center;
+            z-index: 1500;
+            pointer-events: all;
+            cursor: pointer;
+            display: none;
+        }
+
+        #clickToStart:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
     </style>
 </head>
 <body>
@@ -210,6 +231,12 @@
         <div id="playerCount">Players: 0</div>
         
         <div id="connectionStatus" class="connecting">Connecting...</div>
+        
+        <div id="clickToStart">
+            <h3>Welcome to Kronkar FPS!</h3>
+            <p>Click anywhere to start playing</p>
+            <small>Mouse controls will be enabled</small>
+        </div>
         
         <div id="instructions">
             <h3>Controls</h3>

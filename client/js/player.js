@@ -23,6 +23,10 @@ class Player {
         this.shootCooldown = 0.1; // seconds between shots
         this.lastShotTime = 0;
         
+        // Pointer lock state
+        this.isPointerLocked = false;
+        this.justGainedPointerLock = false;
+        
         // Input state
         this.keys = {
             forward: false,
@@ -83,14 +87,14 @@ class Player {
         
         // Mouse input
         document.addEventListener('mousemove', (event) => {
-            if (this.game.isPointerLocked) {
+            if (this.isPointerLocked) {
                 this.mouseMovement.x = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
                 this.mouseMovement.y = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
             }
         });
         
         document.addEventListener('mousedown', (event) => {
-            if (event.button === 0 && this.game.isPointerLocked) { // Left click
+            if (event.button === 0 && this.isPointerLocked && !this.justGainedPointerLock) { // Left click
                 this.keys.shoot = true;
             }
         });
@@ -178,7 +182,7 @@ class Player {
     }
     
     updateCamera(deltaTime) {
-        if (this.game.isPointerLocked) {
+        if (this.isPointerLocked) {
             // Apply mouse movement to camera rotation
             this.camera.rotation.y += this.mouseMovement.x * this.mouseSensitivity;
             this.camera.rotation.x += this.mouseMovement.y * this.mouseSensitivity;
@@ -195,7 +199,7 @@ class Player {
     updateShooting(deltaTime) {
         const currentTime = Date.now() / 1000;
         
-        if (this.keys.shoot && this.canShoot && (currentTime - this.lastShotTime) >= this.shootCooldown) {
+        if (this.keys.shoot && this.canShoot && this.isPointerLocked && !this.justGainedPointerLock && (currentTime - this.lastShotTime) >= this.shootCooldown) {
             this.shoot();
             this.lastShotTime = currentTime;
         }
@@ -291,6 +295,21 @@ class Player {
         if (this.game.uiManager) {
             this.game.uiManager.hideDeathScreen();
             this.game.uiManager.updateHealth(this.health);
+        }
+    }
+    
+    // Handle pointer lock state changes
+    onPointerLockChange(isLocked) {
+        this.isPointerLocked = isLocked;
+        
+        if (isLocked) {
+            // Just gained pointer lock, set flag to prevent immediate shooting
+            this.justGainedPointerLock = true;
+            
+            // Clear the flag after a short delay
+            setTimeout(() => {
+                this.justGainedPointerLock = false;
+            }, 100);
         }
     }
 }
