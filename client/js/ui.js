@@ -23,6 +23,10 @@ class UIManager {
         this.cancelSettingsButton = document.getElementById('cancelSettings');
         this.isSettingsOpen = false;
         
+        // Music selection elements
+        this.musicDropdown = document.getElementById('musicDropdown');
+        this.musicDescription = document.getElementById('musicDescription');
+        
         // Death screen state
         this.isDead = false;
         this.respawnCountdown = 0;
@@ -30,6 +34,7 @@ class UIManager {
         
         this.setupEventListeners();
         this.loadUsername();
+        this.loadSelectedMusic();
     }
     
     setupEventListeners() {
@@ -65,6 +70,14 @@ class UIManager {
         if (this.cancelSettingsButton) {
             this.cancelSettingsButton.addEventListener('click', () => {
                 this.closeSettings();
+            });
+        }
+        
+        // Music selection handlers
+        if (this.musicDropdown) {
+            this.musicDropdown.addEventListener('change', () => {
+                this.saveSelectedMusic();
+                this.updateMusicDescription();
             });
         }
         
@@ -555,6 +568,72 @@ class UIManager {
         }
         
         this.closeSettings();
+    }
+
+    // Music Selection Management
+    loadSelectedMusic() {
+        const savedMusic = localStorage.getItem('kronkar_selected_music');
+        if (savedMusic && this.musicDropdown) {
+            this.musicDropdown.value = savedMusic;
+        }
+        this.updateMusicDescription();
+    }
+    
+    saveSelectedMusic() {
+        if (!this.musicDropdown) return;
+        
+        const selectedMusic = this.musicDropdown.value;
+        localStorage.setItem('kronkar_selected_music', selectedMusic);
+        console.log('Selected music saved:', selectedMusic);
+    }
+    
+    getSelectedMusic() {
+        return localStorage.getItem('kronkar_selected_music') || 'Synthwave1.mp3';
+    }
+    
+    updateMusicDescription() {
+        if (!this.musicDescription) return;
+        
+        const selectedMusic = this.musicDropdown ? this.musicDropdown.value : this.getSelectedMusic();
+        
+        const descriptions = {
+            'Synthwave1.mp3': 'Energetic synthwave track perfect for intense moments',
+            'Synthwave2.mp3': 'Atmospheric synthwave with driving beats',
+            'Phonk1.mp3': 'Hard-hitting phonk track with heavy bass',
+            'Phonk2.mp3': 'Dark phonk beats for maximum intensity'
+        };
+        
+        this.musicDescription.textContent = descriptions[selectedMusic] || 'Music that plays during Flowstate mode';
+    }
+    
+    // Flowstate Message Display
+    showFlowstateMessage(message, duration = 500) {
+        // Remove any existing flowstate message
+        const existingMessage = document.querySelector('.flowstate-message');
+        if (existingMessage) {
+            existingMessage.remove();
+        }
+        
+        // Create new message element
+        const messageElement = document.createElement('div');
+        messageElement.className = 'flowstate-message';
+        messageElement.textContent = message;
+        document.body.appendChild(messageElement);
+        
+        // Show message with animation
+        setTimeout(() => {
+            messageElement.classList.add('show');
+        }, 10);
+        
+        // Hide and remove message after duration
+        setTimeout(() => {
+            messageElement.classList.remove('show');
+            setTimeout(() => {
+                if (messageElement.parentNode) {
+                    messageElement.parentNode.removeChild(messageElement);
+                }
+            }, 500); // Wait for fade out animation
+        }, duration);
     }
 
     addAnimations() {

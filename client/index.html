@@ -403,6 +403,48 @@
             color: #aaa;
         }
 
+        #musicSelection {
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        #musicSelection label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #musicDropdown {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid #007acc;
+            border-radius: 5px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        #musicDropdown:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #musicDropdown option {
+            background: #333;
+            color: white;
+            padding: 10px;
+        }
+
+        #musicDescription {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+            font-style: italic;
+            min-height: 20px;
+        }
+
         #startButton {
             background: #007acc;
             color: white;
@@ -418,6 +460,41 @@
         #startButton:hover {
             background: #005a9e;
         }
+
+        /* Flowstate Message Styles */
+        .flowstate-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff6666;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 3000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .flowstate-message.show {
+            opacity: 1;
+        }
+
+        /* Flowstate Visual Effects */
+        #flowstateOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1500;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -425,6 +502,9 @@
     
     <div id="gameUI">
         <div id="crosshair"></div>
+        
+        <!-- Flowstate overlay for dimming effect -->
+        <div id="flowstateOverlay"></div>
         
         <div id="healthText">Health</div>
         <div id="healthBar">
@@ -453,6 +533,17 @@
                 <div id="weaponDescription">Fully automatic assault rifle with balanced stats</div>
             </div>
             
+            <div id="musicSelection">
+                <label for="musicDropdown">Flowstate Music:</label>
+                <select id="musicDropdown">
+                    <option value="Synthwave1.mp3">Synthwave Track 1</option>
+                    <option value="Synthwave2.mp3">Synthwave Track 2</option>
+                    <option value="Phonk1.mp3">Phonk Track 1</option>
+                    <option value="Phonk2.mp3">Phonk Track 2</option>
+                </select>
+                <div id="musicDescription">Music that plays during Flowstate mode</div>
+            </div>
+            
             <small>Mouse controls will be enabled</small>
         </div>
         
@@ -468,6 +559,7 @@
                 <li>ESC - Settings Menu</li>
                 <li>1 - Bulldog Rifle</li>
                 <li>2 - L118A1 Sniper</li>
+                <li>F - Debug: Toggle Max Flowstate</li>
             </ul>
         </div>
         
@@ -543,6 +635,7 @@
     <!-- Game Scripts -->
     <script src="js/audio.js"></script>
     <script src="js/asset_loader.js"></script>
+    <script src="js/flowstate.js"></script>
     <script src="js/game.js"></script>
     <script src="js/player.js"></script>
     <script src="js/network.js"></script>

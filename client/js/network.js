@@ -179,6 +179,11 @@ class NetworkManager {
                 // Local player got a kill - use server-provided score for consistency
                 this.game.player.score = data.killerScore || this.game.player.score + 1;
                 console.log('Your score is now:', this.game.player.score);
+                
+                // Trigger Flowstate system
+                if (this.game.flowstateManager) {
+                    this.game.flowstateManager.onKill();
+                }
             } else {
                 // Remote player got a kill, update their score with server data
                 const killerPlayer = this.game.remotePlayers.get(data.killerId);

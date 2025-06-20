@@ -7,6 +7,7 @@ class Game {
         this.player = null;
         this.networkManager = null;
         this.uiManager = null;
+        this.flowstateManager = null;
         
         this.isPointerLocked = false;
         this.gameStarted = false;
@@ -352,6 +353,9 @@ class Game {
         this.player = new Player(this);
         this.uiManager = new UIManager(this);
         
+        // Initialize Flowstate system
+        this.flowstateManager = new FlowstateManager(this);
+        
         // Setup input handling
         this.setupInputs();
         
@@ -454,11 +458,15 @@ class Game {
         document.addEventListener('mozpointerlockchange', handlePointerLockChange);
         document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
         
-        // F1 to toggle debug mode, number keys for weapon switching (ESC handled by UIManager)
+        // F1 to toggle debug mode, F for Flowstate debug, number keys for weapon switching (ESC handled by UIManager)
         document.addEventListener('keydown', (event) => {
             if (event.code === 'F1') {
                 this.debugMode = !this.debugMode;
                 console.log('Debug mode:', this.debugMode ? 'ON' : 'OFF');
+                event.preventDefault();
+            } else if (event.code === 'KeyF' && this.flowstateManager && this.gameStarted) {
+                // Toggle max Flowstate for debugging
+                this.flowstateManager.debugToggleMaxFlowstate();
                 event.preventDefault();
             } else if (event.code === 'Digit1' && this.player && this.gameStarted) {
                 // Switch to Bulldog (weapon 1)
@@ -574,6 +582,11 @@ class Game {
         // Update UI
         if (this.uiManager) {
             this.uiManager.update(deltaTime);
+        }
+        
+        // Update Flowstate system
+        if (this.flowstateManager) {
+            this.flowstateManager.update(deltaTime);
         }
         
         // Periodic cleanup of stuck audio (every 5 seconds)
@@ -883,6 +896,11 @@ class Game {
     }
 
     dispose() {
+        if (this.flowstateManager) {
+            this.flowstateManager.dispose();
+            this.flowstateManager = null;
+        }
+        
         if (this.engine) {
             this.engine.dispose();
         }
