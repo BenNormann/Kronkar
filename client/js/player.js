@@ -613,7 +613,12 @@ class Player {
         const barrelWorldPosition = BABYLON.Vector3.TransformCoordinates(barrelOffset, weaponMatrix);
         
         // Get camera direction for aiming (where the player is looking)
-        const aimDirection = this.camera.getDirection(BABYLON.Vector3.Forward());
+        let aimDirection = this.camera.getDirection(BABYLON.Vector3.Forward());
+        
+        // Apply movement-based firing error if weapon has accuracy config
+        if (this.currentWeaponConfig.accuracy) {
+            aimDirection = this.applyMovementFiringError(aimDirection);
+        }
         
         // Move the origin slightly forward along the aim direction to ensure it's outside weapon geometry
         const rayOrigin = barrelWorldPosition.add(aimDirection.scale(config.rayOffset));
@@ -626,6 +631,59 @@ class Player {
             origin: rayOrigin,
             direction: aimDirection
         };
+    }
+    
+    applyMovementFiringError(originalDirection) {
+        const accuracyConfig = this.currentWeaponConfig.accuracy;
+        
+        // Calculate current movement speed (horizontal only)
+        const horizontalVelocity = new BABYLON.Vector3(this.velocity.x, 0, this.velocity.z);
+        const movementSpeed = horizontalVelocity.length();
+        
+        // Start with base weapon spread
+        let totalSpread = accuracyConfig.baseSpread;
+        
+        // Add movement-based error if moving above threshold
+        if (movementSpeed > accuracyConfig.movementThreshold) {
+            // Calculate movement penalty based on speed
+            let movementPenalty = (movementSpeed - accuracyConfig.movementThreshold) * accuracyConfig.movementMultiplier;
+            
+            // Apply sprint penalty if sprinting
+            if (this.keys.sprint) {
+                movementPenalty *= accuracyConfig.sprintPenalty;
+            }
+            
+            // Cap the movement penalty at maximum
+            movementPenalty = Math.min(movementPenalty, accuracyConfig.maxMovementPenalty);
+            
+            totalSpread += movementPenalty;
+        }
+        
+        // Generate random spread within cone
+        const spreadAngle = totalSpread * (Math.random() * 2 - 1); // Random between -totalSpread and +totalSpread
+        const spreadRotation = Math.random() * Math.PI * 2; // Random rotation around the aim axis
+        
+        // Create perpendicular vectors to the aim direction for spread calculation
+        const up = new BABYLON.Vector3(0, 1, 0);
+        let right = BABYLON.Vector3.Cross(originalDirection, up);
+        if (right.length() < 0.001) {
+            // If aiming straight up or down, use a different reference vector
+            right = BABYLON.Vector3.Cross(originalDirection, new BABYLON.Vector3(1, 0, 0));
+        }
+        right.normalize();
+        
+        const actualUp = BABYLON.Vector3.Cross(right, originalDirection);
+        actualUp.normalize();
+        
+        // Apply the spread
+        const horizontalSpread = Math.cos(spreadRotation) * spreadAngle;
+        const verticalSpread = Math.sin(spreadRotation) * spreadAngle;
+        
+        const spreadVector = right.scale(horizontalSpread).add(actualUp.scale(verticalSpread));
+        const newDirection = originalDirection.add(spreadVector);
+        newDirection.normalize();
+        
+        return newDirection;
     }
     
     createBarrelDebugIndicator(position) {

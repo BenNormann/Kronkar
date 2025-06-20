@@ -28,6 +28,15 @@ const BulldogConfig = {
         color: { r: 1, g: 1, b: 0 } // Yellow bullets
     },
     
+    // Accuracy and Movement Error Configuration
+    accuracy: {
+        baseSpread: 0.005, // Base spread when stationary (radians)
+        movementMultiplier: 0.008, // How much movement affects accuracy (higher = more inaccurate when moving)
+        maxMovementPenalty: 0.05, // Maximum additional spread from movement (radians)
+        sprintPenalty: 1.5, // Additional penalty multiplier when sprinting
+        movementThreshold: 10 // Movement speed threshold before penalty kicks in
+    },
+    
     // Barrel Configuration
     barrel: {
         offset: { x: 0.0, y: 0.0, z: 0.8 }, // Centered barrel position for accurate shooting
