@@ -689,29 +689,31 @@ class Game {
         const distance = BABYLON.Vector3.Distance(previousPosition, bullet.mesh.position);
         const ray = new BABYLON.Ray(previousPosition, direction, distance);
         
-        // Check collision with scene objects and player character meshes
-        const hit = this.scene.pickWithRay(ray, (mesh) => {
-            // Filter out bullets, UI elements, weapon meshes, hit effects, safety floors
-            if (mesh.name === 'bullet' || 
-                mesh.name === 'hitEffect' ||
-                mesh.name === 'invisibleFloor' ||
-                mesh.name.startsWith('ui_') || 
-                mesh.isPickable === false) {
+        // Cached mesh filter for better performance
+        const meshFilter = (mesh) => {
+            // Quick early returns for common cases
+            if (!mesh.isPickable || mesh.name === 'bullet' || mesh.name === 'hitEffect' || 
+                mesh.name === 'invisibleFloor' || mesh.name.startsWith('ui_')) {
                 return false;
             }
             
             // Filter out shooter's own character meshes
-            if (mesh.metadata && mesh.metadata.isPlayerMesh && mesh.metadata.playerId === bullet.shooterId) {
-                return false;
-            }
-            
-            // Filter out weapon/bullet/hit effect metadata
-            if (mesh.metadata && (mesh.metadata.isWeapon || mesh.metadata.isBullet || mesh.metadata.isHitEffect || mesh.metadata.isSafetyFloor)) {
-                return false;
+            if (mesh.metadata) {
+                if (mesh.metadata.isPlayerMesh && mesh.metadata.playerId === bullet.shooterId) {
+                    return false;
+                }
+                // Filter out weapon/bullet/hit effect metadata
+                if (mesh.metadata.isWeapon || mesh.metadata.isBullet || 
+                    mesh.metadata.isHitEffect || mesh.metadata.isSafetyFloor) {
+                    return false;
+                }
             }
             
             return true;
-        });
+        };
+        
+        // Check collision with scene objects and player character meshes
+        const hit = this.scene.pickWithRay(ray, meshFilter);
         
         if (hit.hit) {
             // Check if hit mesh is a player character mesh
@@ -741,7 +743,8 @@ class Game {
             }
         }
         
-        // Check collision with remote players
+        // Optimized player collision checks - only if raycast didn't hit anything
+        // Check collision with remote players (simple sphere collision for performance)
         this.remotePlayers.forEach((remotePlayer, playerId) => {
             if (playerId === bullet.shooterId || !remotePlayer.alive) return;
             
@@ -751,6 +754,7 @@ class Game {
             // Simple sphere collision (radius of 1 unit)
             if (distanceToPlayer <= 1.0) {
                 this.handlePlayerHit(bullet, remotePlayer, playerId, bulletIndex);
+                return; // Exit early after hit
             }
         });
         
