@@ -1164,6 +1164,7 @@ class RemotePlayer {
         this.movementBuffer = []; // Buffer to smooth movement detection
         this.movementBufferSize = 5; // Number of frames to consider
         this.lastMovementCheck = 0;
+        this.lastAudioPositionUpdate = 0; // Throttle audio position updates
         
         this.createMesh();
     }
@@ -1449,9 +1450,13 @@ class RemotePlayer {
         this.position = BABYLON.Vector3.Lerp(this.position, this.targetPosition, deltaTime * 5);
         this.rotation = BABYLON.Vector3.Lerp(this.rotation, this.targetRotation, deltaTime * 5);
         
-        // Update walking sound position in real-time as player moves
-        if (this.game.audioManager) {
-            this.game.audioManager.updateWalkingSoundPosition(this.id, this.position);
+        // Update walking sound position in real-time as player moves (throttled for performance)
+        const now = Date.now();
+        if (!this.lastAudioPositionUpdate || now - this.lastAudioPositionUpdate > 50) { // Update max every 50ms
+            if (this.game.audioManager) {
+                this.game.audioManager.updateWalkingSoundPosition(this.id, this.position);
+                this.lastAudioPositionUpdate = now;
+            }
         }
         
         // Update mesh position (character container or fallback mesh)
