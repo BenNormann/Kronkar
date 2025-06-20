@@ -477,12 +477,25 @@ class Player {
                     }
                     if (!canMoveHorizontally) break;
                 }
+            } else {
+                // When skipping detailed checks, do a quick basic collision check
+                const rayOrigin = this.position.add(new BABYLON.Vector3(0, 5, 0));
+                const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
+                const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
+                    return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                           !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                });
                 
-                // Apply horizontal movement if not blocked
-                if (canMoveHorizontally) {
-                    newPosition.x = this.position.x + moveDistance.x;
-                    newPosition.z = this.position.z + moveDistance.z;
+                // Simple collision check with reduced safety distance
+                if (wallHit.hit && wallHit.distance < 2.0) {
+                    canMoveHorizontally = false;
                 }
+            }
+            
+            // Apply horizontal movement if not blocked
+            if (canMoveHorizontally) {
+                newPosition.x = this.position.x + moveDistance.x;
+                newPosition.z = this.position.z + moveDistance.z;
             }
         }
         
@@ -729,42 +742,160 @@ class Player {
     }
     
     createBarrelDebugIndicator(position) {
-        // Use simple, lightweight muzzle flash instead of complex geometry
-        this.createOptimizedMuzzleFlash(position);
+        // Check if this is a sniper rifle for enhanced muzzle flash
+        const isSniper = this.currentWeaponConfig && this.currentWeaponConfig.type === 'sniper_rifle';
+        
+        if (isSniper) {
+            this.createSniperMuzzleFlash(position);
+        } else {
+            this.createStandardMuzzleFlash(position);
+        }
     }
     
-    createOptimizedMuzzleFlash(position) {
-        // Create a simple, reusable muzzle flash that's performance-friendly
-        let muzzleFlash;
+    createSniperMuzzleFlash(position) {
+        // Create dramatic sniper muzzle flash with multiple elements
+        const muzzleFlashGroup = new BABYLON.TransformNode('sniperMuzzleFlash', this.scene);
         
-        // Try to reuse existing muzzle flash if available
-        const existingFlash = this.scene.getMeshByName('muzzleFlash');
-        if (existingFlash && !existingFlash.isDisposed()) {
-            muzzleFlash = existingFlash;
-            muzzleFlash.setEnabled(true);
-        } else {
-            // Create simple sphere for muzzle flash
-            muzzleFlash = BABYLON.MeshBuilder.CreateSphere('muzzleFlash', {
-                diameter: this.currentWeaponConfig?.type === 'sniper_rifle' ? 1.2 : 0.8
-            }, this.scene);
+        // Main bright flash (larger and brighter than standard)
+        const mainFlash = BABYLON.MeshBuilder.CreateSphere('mainFlash', {
+            diameter: 1.8 // Much larger for sniper
+        }, this.scene);
+        mainFlash.parent = muzzleFlashGroup;
+        
+        // Secondary expanding ring flash
+        const ringFlash = BABYLON.MeshBuilder.CreateTorus('ringFlash', {
+            diameter: 2.2,
+            thickness: 0.3
+        }, this.scene);
+        ringFlash.parent = muzzleFlashGroup;
+        
+        // Forward blast cone
+        const blastCone = BABYLON.MeshBuilder.CreateCylinder('blastCone', {
+            height: 1.5,
+            diameterTop: 1.2,
+            diameterBottom: 0.3
+        }, this.scene);
+        blastCone.parent = muzzleFlashGroup;
+        blastCone.position.z = 0.75; // Forward from center
+        blastCone.rotation.x = Math.PI / 2; // Point forward
+        
+        // Position relative to weapon so it moves with the weapon
+        if (this.weapon && this.currentWeaponConfig) {
+            muzzleFlashGroup.parent = this.weapon;
+            const config = this.currentWeaponConfig.barrel;
             
-            // Simple emissive material
-            const material = new BABYLON.StandardMaterial('muzzleFlashMat', this.scene);
-            material.emissiveColor = new BABYLON.Color3(1, 0.8, 0.3); // Orange flash
-            material.disableLighting = true;
-            muzzleFlash.material = material;
-            muzzleFlash.isPickable = false;
+            // Use the same method as standard weapons - convert world position to local weapon space
+            const weaponMatrix = this.weapon.getWorldMatrix();
+            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
+            
+            // For sniper, adjust the local position to move flash to the right side
+            if (this.currentWeaponConfig.type === 'sniper_rifle') {
+                // Add offset to move flash forward and to the right from player's perspective
+                localPosition.x += 2; // Move forward
+                localPosition.z -= 1.3; // Move to right
+            }
+            
+            muzzleFlashGroup.position = localPosition;
+        } else {
+            // Fallback to world position if no weapon
+            muzzleFlashGroup.position = position;
         }
         
-        // Position the flash
-        muzzleFlash.position = position.clone();
+        // Create materials for each element
+        const mainMaterial = new BABYLON.StandardMaterial('sniperMainFlash', this.scene);
+        mainMaterial.emissiveColor = new BABYLON.Color3(1, 0.9, 0.6); // Bright white-yellow
+        mainMaterial.diffuseColor = new BABYLON.Color3(1, 0.8, 0.3);
+        mainMaterial.emissiveIntensity = 3.5; // Very bright
+        mainFlash.material = mainMaterial;
         
-        // Auto-hide after short duration
+        const ringMaterial = new BABYLON.StandardMaterial('sniperRingFlash', this.scene);
+        ringMaterial.emissiveColor = new BABYLON.Color3(1, 0.6, 0.2); // Orange ring
+        ringMaterial.diffuseColor = new BABYLON.Color3(1, 0.5, 0.1);
+        ringMaterial.emissiveIntensity = 2.5;
+        ringFlash.material = ringMaterial;
+        
+        const coneMaterial = new BABYLON.StandardMaterial('sniperConeFlash', this.scene);
+        coneMaterial.emissiveColor = new BABYLON.Color3(1, 0.7, 0.3); // Yellow-orange blast
+        coneMaterial.diffuseColor = new BABYLON.Color3(1, 0.6, 0.2);
+        coneMaterial.emissiveIntensity = 2.0;
+        coneMaterial.alpha = 0.8; // Semi-transparent
+        blastCone.material = coneMaterial;
+        
+        // Make all elements non-collidable
+        [mainFlash, ringFlash, blastCone].forEach(mesh => {
+            mesh.isPickable = false;
+            mesh.checkCollisions = false;
+        });
+        
+        // Animate the muzzle flash for more dramatic effect
+        const expandAnimation = new BABYLON.Animation(
+            'muzzleFlashExpand',
+            'scaling',
+            60,
+            BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        
+        const expandKeys = [
+            { frame: 0, value: new BABYLON.Vector3(0.1, 0.1, 0.1) },
+            { frame: 3, value: new BABYLON.Vector3(1.2, 1.2, 1.2) },
+            { frame: 12, value: new BABYLON.Vector3(0.3, 0.3, 0.3) }
+        ];
+        expandAnimation.setKeys(expandKeys);
+        
+        // Apply animation to main flash
+        this.scene.beginDirectAnimation(mainFlash, [expandAnimation], 0, 12, false);
+        
+        // Ring flash animation (delayed and different pattern)
+        const ringExpandAnimation = expandAnimation.clone();
+        ringExpandAnimation.name = 'ringFlashExpand';
+        const ringExpandKeys = [
+            { frame: 0, value: new BABYLON.Vector3(0.2, 0.2, 0.2) },
+            { frame: 5, value: new BABYLON.Vector3(1.5, 1.5, 1.5) },
+            { frame: 15, value: new BABYLON.Vector3(0.1, 0.1, 0.1) }
+        ];
+        ringExpandAnimation.setKeys(ringExpandKeys);
+        this.scene.beginDirectAnimation(ringFlash, [ringExpandAnimation], 0, 15, false);
+        
+        // Longer duration for sniper muzzle flash (150ms)
         setTimeout(() => {
-            if (muzzleFlash && !muzzleFlash.isDisposed()) {
-                muzzleFlash.setEnabled(false);
-            }
-        }, 50); // Very brief flash
+            muzzleFlashGroup.dispose();
+        }, 150);
+    }
+    
+    createStandardMuzzleFlash(position) {
+        // Create standard muzzle flash for other weapons
+        const muzzleFlash = BABYLON.MeshBuilder.CreateSphere('muzzleFlash', {
+            diameter: 0.8
+        }, this.scene);
+        
+        // Position relative to weapon so it moves with the weapon
+        if (this.weapon && this.currentWeaponConfig) {
+            // Parent to weapon but use the calculated world position converted to local space
+            muzzleFlash.parent = this.weapon;
+            
+            // Convert world position to local weapon space
+            const weaponMatrix = this.weapon.getWorldMatrix();
+            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
+            muzzleFlash.position = localPosition;
+        } else {
+            // Fallback to world position if no weapon
+            muzzleFlash.position = position;
+        }
+        
+        muzzleFlash.material = new BABYLON.StandardMaterial('muzzleFlashMat', this.scene);
+        muzzleFlash.material.emissiveColor = new BABYLON.Color3(1, 0.6, 0);
+        muzzleFlash.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2);
+        muzzleFlash.material.specularColor = new BABYLON.Color3(1, 1, 0.5);
+        muzzleFlash.material.emissiveIntensity = 2.0;
+        
+        muzzleFlash.isPickable = false;
+        muzzleFlash.checkCollisions = false;
+        
+        // Standard duration (50ms)
+        setTimeout(() => {
+            muzzleFlash.dispose();
+        }, 50);
     }
     
     addWeaponRecoil() {
