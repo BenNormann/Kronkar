@@ -62,6 +62,7 @@ io.on('connection', (socket) => {
     health: gameConfig.maxHealth,
     alive: true,
     score: 0, // Initialize kill score
+    username: `Player ${socket.id.slice(-4)}`, // Default username
     lastUpdate: Date.now()
   };
   
@@ -166,6 +167,23 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Handle username updates
+  socket.on('usernameUpdate', (data) => {
+    const player = players.get(socket.id);
+    if (player && data.username) {
+      const sanitizedUsername = data.username.trim().substring(0, 20); // Limit length and trim
+      player.username = sanitizedUsername;
+      
+      console.log(`Player ${socket.id} updated username to: ${sanitizedUsername}`);
+      
+      // Broadcast the username update to all other players
+      socket.broadcast.emit('playerUsernameUpdated', {
+        playerId: socket.id,
+        username: sanitizedUsername
+      });
+    }
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);

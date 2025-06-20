@@ -1118,6 +1118,7 @@ class RemotePlayer {
         this.health = playerData.health;
         this.alive = playerData.alive;
         this.score = playerData.score || 0; // Kill score tracking
+        this.username = playerData.username || `Player ${this.id.slice(-4)}`; // Username or default
         
         // Interpolation
         this.targetPosition = this.position.clone();
@@ -1234,28 +1235,58 @@ class RemotePlayer {
     }
     
     createNameTag() {
-        // Create a simple name display above the player
+        // Create a larger name tag with dynamic text (2x bigger)
         const nameTag = BABYLON.MeshBuilder.CreatePlane(`nameTag_${this.id}`, {
-            width: 2,
-            height: 0.5
+            width: 6,  // 2x bigger (was 3)
+            height: 1.6  // 2x bigger (was 0.8)
         }, this.scene);
         
-        // Use character config for name tag positioning if available
-        const nameTagOffset = this.characterConfig ? 
-            new BABYLON.Vector3(
-                this.characterConfig.nameTagOffset.x,
-                this.characterConfig.nameTagOffset.y,
-                this.characterConfig.nameTagOffset.z
-            ) : 
-            new BABYLON.Vector3(0, 2.5, 0);
-            
-        nameTag.position = this.position.add(nameTagOffset);
+        // Position name tag way above character - direct positioning approach
+        nameTag.position = new BABYLON.Vector3(
+            this.position.x,
+            this.position.y + 15, // Direct Y position - 15 units above character
+            this.position.z
+        );
         nameTag.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
         
-        // Name tag material with text (simplified)
+        // Create larger dynamic texture for text (2x resolution)
+        const dynamicTexture = new BABYLON.DynamicTexture(`nameTagTexture_${this.id}`, {width: 512, height: 128}, this.scene);
+        const context = dynamicTexture.getContext();
+        
+        // Set font and draw background
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, 512, 128);
+        
+        // Draw username text with dynamic font sizing
+        context.fillStyle = 'white';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        
+        // Calculate optimal font size based on text width
+        const maxFontSize = 48;
+        const maxWidth = 480; // Leave some padding (512 - 32)
+        let fontSize = maxFontSize;
+        
+        // Start with max font size and scale down if needed
+        context.font = `bold ${fontSize}px Arial`;
+        let textWidth = context.measureText(this.username).width;
+        
+        // Scale down font if text is too wide
+        while (textWidth > maxWidth && fontSize > 16) {
+            fontSize -= 2;
+            context.font = `bold ${fontSize}px Arial`;
+            textWidth = context.measureText(this.username).width;
+        }
+        
+        context.fillText(this.username, 256, 64); // Centered in larger texture
+        dynamicTexture.update();
+        
+        // Create material with the dynamic texture
         const material = new BABYLON.StandardMaterial(`nameTagMat_${this.id}`, this.scene);
-        material.diffuseColor = new BABYLON.Color3(1, 1, 1);
-        material.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+        material.diffuseTexture = dynamicTexture;
+        material.emissiveTexture = dynamicTexture;
+        material.emissiveColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+        material.disableLighting = true;
         nameTag.material = material;
         
         // Make name tag non-collidable
@@ -1263,6 +1294,41 @@ class RemotePlayer {
         nameTag.checkCollisions = false;
         
         this.nameTag = nameTag;
+        this.nameTagTexture = dynamicTexture;
+    }
+    
+    updateNameTag() {
+        // Update the name tag text when username changes
+        if (this.nameTagTexture) {
+            const context = this.nameTagTexture.getContext();
+            
+            // Clear and redraw with larger dimensions
+            context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            context.fillRect(0, 0, 512, 128);
+            
+            context.fillStyle = 'white';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            
+            // Calculate optimal font size based on text width
+            const maxFontSize = 48;
+            const maxWidth = 480; // Leave some padding (512 - 32)
+            let fontSize = maxFontSize;
+            
+            // Start with max font size and scale down if needed
+            context.font = `bold ${fontSize}px Arial`;
+            let textWidth = context.measureText(this.username).width;
+            
+            // Scale down font if text is too wide
+            while (textWidth > maxWidth && fontSize > 16) {
+                fontSize -= 2;
+                context.font = `bold ${fontSize}px Arial`;
+                textWidth = context.measureText(this.username).width;
+            }
+            
+            context.fillText(this.username, 256, 64); // Centered in larger texture
+            this.nameTagTexture.update();
+        }
     }
     
     update(deltaTime) {
@@ -1291,17 +1357,13 @@ class RemotePlayer {
             }
         }
         
-        // Update name tag position
+        // Update name tag position - direct positioning way above character
         if (this.nameTag) {
-            const nameTagOffset = this.characterConfig ? 
-                new BABYLON.Vector3(
-                    this.characterConfig.nameTagOffset.x,
-                    this.characterConfig.nameTagOffset.y,
-                    this.characterConfig.nameTagOffset.z
-                ) : 
-                new BABYLON.Vector3(0, 2.5, 0);
-                
-            this.nameTag.position = this.position.add(nameTagOffset);
+            this.nameTag.position = new BABYLON.Vector3(
+                this.position.x,
+                this.position.y + 19, // Direct Y position - 15 units above character
+                this.position.z
+            );
         }
     }
     

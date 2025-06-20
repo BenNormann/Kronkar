@@ -405,6 +405,11 @@ class Game {
         // Handle start button click
         if (startButton) {
             startButton.addEventListener('click', (event) => {
+                // Save username from input field
+                if (this.uiManager) {
+                    this.uiManager.saveUsername();
+                }
+                
                 // Get selected weapon
                 const selectedWeapon = weaponDropdown ? weaponDropdown.value : 'bulldog';
                 this.selectedWeapon = selectedWeapon;
@@ -445,11 +450,9 @@ class Game {
         document.addEventListener('mozpointerlockchange', handlePointerLockChange);
         document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
         
-        // ESC to release pointer lock, F1 to toggle debug mode, number keys for weapon switching
+        // F1 to toggle debug mode, number keys for weapon switching (ESC handled by UIManager)
         document.addEventListener('keydown', (event) => {
-            if (event.code === 'Escape' && this.isPointerLocked) {
-                document.exitPointerLock();
-            } else if (event.code === 'F1') {
+            if (event.code === 'F1') {
                 this.debugMode = !this.debugMode;
                 console.log('Debug mode:', this.debugMode ? 'ON' : 'OFF');
                 event.preventDefault();

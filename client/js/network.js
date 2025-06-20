@@ -54,6 +54,12 @@ class NetworkManager {
             console.log('Player joined:', data);
             this.playerId = data.playerId;
             
+            // Send initial username
+            if (this.game.uiManager) {
+                const username = this.game.uiManager.getCurrentUsername();
+                this.sendUsernameUpdate(username);
+            }
+            
             // Set player position to spawn position
             if (data.player && data.player.position) {
                 const spawnPos = new BABYLON.Vector3(
@@ -159,8 +165,22 @@ class NetworkManager {
             
             // Show kill feed
             if (this.game.uiManager) {
-                const killerName = data.killerId === this.playerId ? 'You' : `Player ${data.killerId.slice(-4)}`;
-                const victimName = data.victimId === this.playerId ? 'You' : `Player ${data.victimId.slice(-4)}`;
+                let killerName, victimName;
+                
+                if (data.killerId === this.playerId) {
+                    killerName = 'You';
+                } else {
+                    const killerPlayer = this.game.remotePlayers.get(data.killerId);
+                    killerName = killerPlayer?.username || `Player ${data.killerId.slice(-4)}`;
+                }
+                
+                if (data.victimId === this.playerId) {
+                    victimName = 'You';
+                } else {
+                    const victimPlayer = this.game.remotePlayers.get(data.victimId);
+                    victimName = victimPlayer?.username || `Player ${data.victimId.slice(-4)}`;
+                }
+                
                 this.game.uiManager.showKillFeed(killerName, victimName);
             }
         });
@@ -181,6 +201,17 @@ class NetworkManager {
                 if (remotePlayer) {
                     remotePlayer.updateFromServer(data.player);
                 }
+            }
+        });
+        
+        // Username update from other players
+        this.socket.on('playerUsernameUpdated', (data) => {
+            console.log('Player username updated:', data);
+            const remotePlayer = this.game.remotePlayers.get(data.playerId);
+            if (remotePlayer) {
+                remotePlayer.username = data.username;
+                remotePlayer.updateNameTag(); // Update the visual name tag
+                console.log(`Updated username for player ${data.playerId}: ${data.username}`);
             }
         });
     }
@@ -234,6 +265,15 @@ class NetworkManager {
         if (!this.connected || !this.socket) return;
         
         this.socket.emit('requestRespawn');
+    }
+    
+    sendUsernameUpdate(username) {
+        if (!this.connected || !this.socket) return;
+        
+        this.socket.emit('usernameUpdate', {
+            username: username
+        });
+        console.log('Sent username update:', username);
     }
     
     updateConnectionStatus(status, message) {

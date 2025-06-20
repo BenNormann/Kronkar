@@ -16,12 +16,20 @@ class UIManager {
         this.leaderboardBody = document.getElementById('leaderboardBody');
         this.isLeaderboardOpen = false;
         
+        // Username input elements (welcome screen and settings menu)
+        this.usernameInput = document.getElementById('usernameInput');
+        this.settingsMenu = document.getElementById('settingsMenu');
+        this.saveSettingsButton = document.getElementById('saveSettings');
+        this.cancelSettingsButton = document.getElementById('cancelSettings');
+        this.isSettingsOpen = false;
+        
         // Death screen state
         this.isDead = false;
         this.respawnCountdown = 0;
         this.respawnInterval = null;
         
         this.setupEventListeners();
+        this.loadUsername();
     }
     
     setupEventListeners() {
@@ -29,6 +37,34 @@ class UIManager {
         if (this.respawnButton) {
             this.respawnButton.addEventListener('click', () => {
                 this.requestRespawn();
+            });
+        }
+        
+        // Username input handlers (for welcome screen)
+        if (this.usernameInput) {
+            // Save username when user types or changes focus
+            this.usernameInput.addEventListener('blur', () => {
+                this.saveUsername();
+            });
+            
+            this.usernameInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter') {
+                    this.saveUsername();
+                    this.usernameInput.blur();
+                }
+            });
+        }
+        
+        // Settings menu button handlers
+        if (this.saveSettingsButton) {
+            this.saveSettingsButton.addEventListener('click', () => {
+                this.saveSettings();
+            });
+        }
+        
+        if (this.cancelSettingsButton) {
+            this.cancelSettingsButton.addEventListener('click', () => {
+                this.closeSettings();
             });
         }
         
@@ -40,8 +76,20 @@ class UIManager {
             }
             
             // Tab key for leaderboard
-            if (event.code === 'Tab' && !this.isDead) {
+            if (event.code === 'Tab' && !this.isDead && !this.isSettingsOpen) {
                 this.toggleLeaderboard();
+                event.preventDefault();
+            }
+            
+            // Escape key for settings menu
+            if (event.code === 'Escape' && !this.isDead) {
+                if (this.isSettingsOpen) {
+                    this.closeSettings();
+                } else if (this.isLeaderboardOpen) {
+                    this.toggleLeaderboard();
+                } else {
+                    this.openSettings();
+                }
                 event.preventDefault();
             }
         });
@@ -302,7 +350,7 @@ class UIManager {
         if (this.game.player && this.game.networkManager) {
             players.push({
                 id: this.game.networkManager.playerId,
-                name: `Player ${this.game.networkManager.playerId.slice(-4)}`,
+                name: this.getCurrentUsername(),
                 score: this.game.player.score || 0,
                 alive: this.game.player.alive
             });
@@ -312,7 +360,7 @@ class UIManager {
         this.game.remotePlayers.forEach((remotePlayer, playerId) => {
             players.push({
                 id: playerId,
-                name: `Player ${playerId.slice(-4)}`,
+                name: remotePlayer.username || `Player ${playerId.slice(-4)}`,
                 score: remotePlayer.score || 0,
                 alive: remotePlayer.alive
             });
@@ -369,6 +417,144 @@ class UIManager {
         if (this.isLeaderboardOpen) {
             this.updateLeaderboard();
         }
+    }
+    
+    // Username Management
+    loadUsername() {
+        // Load username from localStorage or generate default
+        const savedUsername = localStorage.getItem('kronkar_username');
+        if (savedUsername) {
+            this.currentUsername = savedUsername;
+        } else {
+            // Generate a default username
+            this.currentUsername = this.generateDefaultUsername();
+            localStorage.setItem('kronkar_username', this.currentUsername);
+        }
+        
+        // Update input field if it exists
+        if (this.usernameInput) {
+            this.usernameInput.value = this.currentUsername;
+        }
+        
+        console.log('Loaded username:', this.currentUsername);
+    }
+    
+    generateDefaultUsername() {
+        const adjectives = ['Swift', 'Shadow', 'Lightning', 'Steel', 'Storm', 'Frost', 'Fire', 'Dark', 'Golden', 'Silver'];
+        const nouns = ['Warrior', 'Hunter', 'Sniper', 'Ghost', 'Wolf', 'Eagle', 'Viper', 'Tiger', 'Dragon', 'Phoenix'];
+        
+        const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+        const randomNumber = Math.floor(Math.random() * 99);
+        
+        return `${randomAdjective}${randomNoun}${randomNumber}`;
+    }
+    
+    getCurrentUsername() {
+        return this.currentUsername || 'Player';
+    }
+    
+    // Save username from the welcome screen input
+    saveUsername() {
+        if (!this.usernameInput) return;
+        
+        let newUsername = this.usernameInput.value.trim();
+        
+        // Validation
+        if (!newUsername) {
+            newUsername = this.generateDefaultUsername();
+            this.usernameInput.value = newUsername;
+        }
+        
+        if (newUsername.length > 20) {
+            newUsername = newUsername.substring(0, 20);
+            this.usernameInput.value = newUsername;
+        }
+        
+        // Remove invalid characters
+        newUsername = newUsername.replace(/[<>"/\\&]/g, '');
+        this.usernameInput.value = newUsername;
+        
+        if (newUsername !== this.currentUsername) {
+            this.currentUsername = newUsername;
+            localStorage.setItem('kronkar_username', this.currentUsername);
+            
+            // Notify server of username change if connected
+            if (this.game.networkManager && this.game.networkManager.connected) {
+                this.game.networkManager.sendUsernameUpdate(this.currentUsername);
+            }
+            
+            console.log('Username updated to:', this.currentUsername);
+        }
+    }
+    
+    // Settings Menu Methods
+    openSettings() {
+        if (!this.settingsMenu || this.isDead) return;
+        
+        this.isSettingsOpen = true;
+        this.settingsMenu.style.display = 'block';
+        
+        // Close leaderboard if open
+        if (this.isLeaderboardOpen) {
+            this.toggleLeaderboard();
+        }
+        
+        // Update settings input with current username
+        const settingsUsernameInput = this.settingsMenu.querySelector('#usernameInput');
+        if (settingsUsernameInput) {
+            settingsUsernameInput.value = this.currentUsername;
+            settingsUsernameInput.focus();
+            settingsUsernameInput.select();
+        }
+    }
+    
+    closeSettings() {
+        if (!this.settingsMenu) return;
+        
+        this.isSettingsOpen = false;
+        this.settingsMenu.style.display = 'none';
+    }
+    
+    saveSettings() {
+        const settingsUsernameInput = this.settingsMenu.querySelector('#usernameInput');
+        if (!settingsUsernameInput) return;
+        
+        let newUsername = settingsUsernameInput.value.trim();
+        
+        // Validation
+        if (!newUsername) {
+            this.showMessage('Username cannot be empty!', 3000, 'error');
+            return;
+        }
+        
+        if (newUsername.length > 20) {
+            this.showMessage('Username too long! Max 20 characters.', 3000, 'error');
+            return;
+        }
+        
+        // Remove invalid characters
+        newUsername = newUsername.replace(/[<>"/\\&]/g, '');
+        
+        if (newUsername !== this.currentUsername) {
+            this.currentUsername = newUsername;
+            localStorage.setItem('kronkar_username', this.currentUsername);
+            
+            // Update welcome screen input as well
+            if (this.usernameInput) {
+                this.usernameInput.value = this.currentUsername;
+            }
+            
+            // Notify server of username change
+            if (this.game.networkManager && this.game.networkManager.connected) {
+                this.game.networkManager.sendUsernameUpdate(this.currentUsername);
+            }
+            
+            this.showMessage(`Username updated to: ${this.currentUsername}`, 3000, 'success');
+            console.log('Username updated to:', this.currentUsername);
+        }
+        
+        this.closeSettings();
     }
 
     addAnimations() {

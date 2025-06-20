@@ -292,6 +292,7 @@
             font-size: 12px;
         }
 
+        
         #instructions ul {
             list-style: none;
         }
@@ -364,6 +365,44 @@
             min-height: 20px;
         }
 
+        #usernameSelection {
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        #usernameSelection label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #usernameInput {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid #007acc;
+            border-radius: 5px;
+            cursor: text;
+            outline: none;
+        }
+
+        #usernameInput:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #usernameInput:focus {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #00a0ff;
+            box-shadow: 0 0 10px rgba(0, 160, 255, 0.3);
+        }
+
+        #usernameInput::placeholder {
+            color: #aaa;
+        }
+
         #startButton {
             background: #007acc;
             color: white;
@@ -400,6 +439,11 @@
         <div id="clickToStart">
             <h3>Welcome to Kronkar FPS!</h3>
             
+            <div id="usernameSelection">
+                <label for="usernameInput">Your Username:</label>
+                <input type="text" id="usernameInput" placeholder="Enter your display name..." maxlength="20">
+            </div>
+            
             <div id="weaponSelection">
                 <label for="weaponDropdown">Choose Your Weapon:</label>
                 <select id="weaponDropdown">
@@ -421,9 +465,9 @@
                 <li>Shift - Sprint</li>
                 <li>Left Click - Shoot</li>
                 <li>Tab - Leaderboard</li>
+                <li>ESC - Settings Menu</li>
                 <li>1 - Bulldog Rifle</li>
                 <li>2 - L118A1 Sniper</li>
-                <li>ESC - Release mouse</li>
             </ul>
         </div>
         
