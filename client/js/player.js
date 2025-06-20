@@ -52,7 +52,6 @@ class Player {
         // Performance optimizations
         this.cachedWeaponMatrix = null; // Cache weapon matrix for better performance
         this.weaponMatrixNeedsUpdate = true; // Flag to update cached matrix
-        this.lastCollisionCheckTime = 0; // Throttle collision checks for performance
         
         // Input state
         this.keys = {
@@ -343,53 +342,47 @@ class Player {
     }
     
     updateMovement(deltaTime) {
-        let moveVector = new BABYLON.Vector3(0, 0, 0);
+        // Don't update movement if dead
+        if (!this.alive) return;
         
-        // Calculate movement direction based on camera rotation
+        // Calculate movement based on input
+        let forwardBackwardVector = new BABYLON.Vector3(0, 0, 0);
+        let leftRightVector = new BABYLON.Vector3(0, 0, 0);
+        
+        // Get camera direction for movement
         const forward = this.camera.getDirection(BABYLON.Vector3.Forward());
         const right = this.camera.getDirection(BABYLON.Vector3.Right());
         
-        // Flatten forward and right vectors (remove Y component for ground movement)
+        // Make sure we only move horizontally
         forward.y = 0;
         right.y = 0;
         forward.normalize();
         right.normalize();
         
-        // Apply movement inputs with separate speeds for forward/backward vs left/right
-        let forwardBackwardVector = new BABYLON.Vector3(0, 0, 0);
-        let leftRightVector = new BABYLON.Vector3(0, 0, 0);
+        // Calculate base speed
+        let baseSpeed = this.speed;
+        let horizontalBaseSpeed = this.horizontalSpeed;
         
-        // Handle forward/backward movement
-        if (this.keys.forward) {
-            forwardBackwardVector.addInPlace(forward);
-        }
-        if (this.keys.backward) {
-            forwardBackwardVector.subtractInPlace(forward);
+        // Apply sprint multiplier
+        if (this.keys.sprint) {
+            baseSpeed = this.sprintSpeed;
+            horizontalBaseSpeed = this.sprintSpeed * 0.5; // Proportional strafe speed
         }
         
-        // Handle left/right movement
-        if (this.keys.left) {
-            leftRightVector.subtractInPlace(right);
-        }
-        if (this.keys.right) {
-            leftRightVector.addInPlace(right);
+        // Calculate forward/backward movement
+        if (this.keys.forward || this.keys.backward) {
+            const direction = this.keys.forward ? 1 : -1;
+            forwardBackwardVector = forward.scale(direction * baseSpeed);
         }
         
-        // Apply different speeds to each movement type
-        if (forwardBackwardVector.length() > 0) {
-            const baseSpeed = this.keys.sprint ? this.sprintSpeed : this.speed;
-            forwardBackwardVector.normalize();
-            forwardBackwardVector.scaleInPlace(baseSpeed);
-        }
-        
-        if (leftRightVector.length() > 0) {
-            const horizontalBaseSpeed = this.keys.sprint ? this.sprintSpeed * 0.5 : this.horizontalSpeed;
-            leftRightVector.normalize();
-            leftRightVector.scaleInPlace(horizontalBaseSpeed);
+        // Calculate left/right movement
+        if (this.keys.left || this.keys.right) {
+            const direction = this.keys.right ? 1 : -1;
+            leftRightVector = right.scale(direction * horizontalBaseSpeed);
         }
         
         // Combine movement vectors
-        moveVector = forwardBackwardVector.add(leftRightVector);
+        const moveVector = forwardBackwardVector.add(leftRightVector);
         
         // Apply diagonal movement reduction if moving in both directions
         if (forwardBackwardVector.length() > 0 && leftRightVector.length() > 0) {
@@ -409,87 +402,73 @@ class Player {
         // Apply gravity
         this.velocity.y += this.gravity * deltaTime;
         
-        // Calculate movement step by step to prevent collision issues
+        // IMPROVED COLLISION DETECTION SYSTEM
         const moveDistance = this.velocity.scale(deltaTime);
         let newPosition = this.position.clone();
         
-        // Step 1: Handle horizontal movement with wall collision
+        // Step 1: Handle horizontal movement with CONTINUOUS collision detection
         const horizontalDistance = Math.sqrt(moveDistance.x * moveDistance.x + moveDistance.z * moveDistance.z);
-        if (horizontalDistance > 0.01) { // Only check if there's meaningful horizontal movement
+        if (horizontalDistance > 0.01) {
             const horizontalMove = new BABYLON.Vector3(moveDistance.x, 0, moveDistance.z);
             const horizontalDir = horizontalMove.normalize();
             let canMoveHorizontally = true;
             
-            // Throttle collision checks for better performance - especially during sprinting
-            const now = performance.now();
-            const shouldSkipDetailedCheck = (now - this.lastCollisionCheckTime) < 16 && horizontalDistance < 5.0; // Skip if less than 16ms and not super fast
+            // IMPROVED: Continuous collision detection - no performance throttling
+            // Calculate proper safety distance based on movement speed
+            const minSafetyDistance = Math.max(4.0, horizontalDistance * 1.5); // Dynamic safety distance
+            const maxSafetyDistance = Math.min(15.0, minSafetyDistance); // Cap at reasonable value
             
-            if (!shouldSkipDetailedCheck) {
-                this.lastCollisionCheckTime = now;
+            // IMPROVED: Multiple collision checks along the movement path
+            const numSteps = Math.max(2, Math.ceil(horizontalDistance / 2.0)); // More steps for longer distances
+            
+            for (let step = 0; step < numSteps && canMoveHorizontally; step++) {
+                const stepRatio = (step + 1) / numSteps;
+                const checkPosition = this.position.add(horizontalMove.scale(stepRatio));
                 
-                // For high-speed movement (sprinting), use multiple collision checks along the path
-                const isHighSpeed = horizontalDistance > 3.0; // Detect sprinting or fast movement
-                const checkSteps = isHighSpeed ? 2 : 1; // Reduced from 3 to 2 checks for high speed
-                const safetyDistance = isHighSpeed ? 3.0 : 2.5; // Reduced safety margin for better performance
+                // IMPROVED: More comprehensive ray casting at multiple heights
+                const rayHeights = [0.5, 2, 4, 6, 8, 10, 12, 14]; // Cover full player height
                 
-                for (let step = 0; step < checkSteps && canMoveHorizontally; step++) {
-                    const stepRatio = (step + 1) / checkSteps;
-                    const checkPosition = this.position.add(horizontalMove.scale(stepRatio));
+                for (let height of rayHeights) {
+                    const rayOrigin = checkPosition.add(new BABYLON.Vector3(0, height, 0));
+                    const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
+                    const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
+                        return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                               !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                    });
                     
-                    // Cast rays at different heights to check for wall collision - reduced ray count
-                    const rayHeights = isHighSpeed ? [1, 5, 9] : [1, 3, 5]; // Fewer rays for better performance
-                    for (let height of rayHeights) {
-                        const rayOrigin = checkPosition.add(new BABYLON.Vector3(0, height, 0));
-                        const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
-                        const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
-                            return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                                   !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                        });
-                        
-                        // If we would hit a wall within safety distance
-                        if (wallHit.hit && wallHit.distance < safetyDistance) {
-                            canMoveHorizontally = false;
-                            break;
-                        }
-                        
-                        // Reduced side collision checks for sprinting - only check if really needed
-                        if (isHighSpeed && step === checkSteps - 1) { // Only check on final step
-                            const sideAngles = [-0.2, 0.2]; // Reduced angle and only 2 checks
-                            for (let angle of sideAngles) {
-                                const sideDir = new BABYLON.Vector3(
-                                    horizontalDir.x * Math.cos(angle) - horizontalDir.z * Math.sin(angle),
-                                    0,
-                                    horizontalDir.x * Math.sin(angle) + horizontalDir.z * Math.cos(angle)
-                                );
-                                const sideRay = new BABYLON.Ray(rayOrigin, sideDir);
-                                const sideHit = this.scene.pickWithRay(sideRay, (mesh) => {
-                                    return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                                           !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                                });
-                                
-                                if (sideHit.hit && sideHit.distance < safetyDistance * 0.7) { // Reduced multiplier
-                                    canMoveHorizontally = false;
-                                    break;
-                                }
-                            }
-                            if (!canMoveHorizontally) break;
-                        }
+                    // Check if we would hit a wall within safety distance
+                    if (wallHit.hit && wallHit.distance < maxSafetyDistance) {
+                        canMoveHorizontally = false;
+                        break;
                     }
-                    if (!canMoveHorizontally) break;
                 }
-            } else {
-                // When skipping detailed checks, do a quick basic collision check
-                const rayOrigin = this.position.add(new BABYLON.Vector3(0, 5, 0));
-                const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
-                const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
-                    return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                           !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                });
                 
-                // Simple collision check with reduced safety distance
-                if (wallHit.hit && wallHit.distance < 2.0) {
-                    canMoveHorizontally = false;
+                if (!canMoveHorizontally) break;
+                
+                // IMPROVED: Additional side collision checks for corners
+                const sideAngles = [-0.3, -0.15, 0.15, 0.3]; // Check multiple angles
+                for (let angle of sideAngles) {
+                    const sideDir = new BABYLON.Vector3(
+                        horizontalDir.x * Math.cos(angle) - horizontalDir.z * Math.sin(angle),
+                        0,
+                        horizontalDir.x * Math.sin(angle) + horizontalDir.z * Math.cos(angle)
+                    );
+                    
+                    // Check at mid-height (most important for wall detection)
+                    const rayOrigin = checkPosition.add(new BABYLON.Vector3(0, 6, 0));
+                    const sideRay = new BABYLON.Ray(rayOrigin, sideDir);
+                    const sideHit = this.scene.pickWithRay(sideRay, (mesh) => {
+                        return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                               !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                    });
+                    
+                    if (sideHit.hit && sideHit.distance < maxSafetyDistance * 0.8) {
+                        canMoveHorizontally = false;
+                        break;
+                    }
                 }
+                
+                if (!canMoveHorizontally) break;
             }
             
             // Apply horizontal movement if not blocked
@@ -502,21 +481,38 @@ class Player {
         // Step 2: Handle vertical movement and ground detection
         newPosition.y = this.position.y + moveDistance.y;
         
-        // Ground check - always cast from slightly above the new position
-        const groundCheckOrigin = new BABYLON.Vector3(newPosition.x, newPosition.y + 1, newPosition.z);
-        const groundRay = new BABYLON.Ray(groundCheckOrigin, new BABYLON.Vector3(0, -1, 0));
-        const groundHit = this.scene.pickWithRay(groundRay, (mesh) => {
-            return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                   !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-        });
+        // IMPROVED: Ground detection with multiple rays
+        const groundCheckPositions = [
+            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z), // Center
+            new BABYLON.Vector3(newPosition.x + 1, newPosition.y + 2, newPosition.z), // Right
+            new BABYLON.Vector3(newPosition.x - 1, newPosition.y + 2, newPosition.z), // Left
+            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z + 1), // Forward
+            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z - 1)  // Backward
+        ];
+        
+        let groundHit = null;
+        let closestGroundDistance = Infinity;
+        
+        for (let checkPos of groundCheckPositions) {
+            const groundRay = new BABYLON.Ray(checkPos, new BABYLON.Vector3(0, -1, 0));
+            const hit = this.scene.pickWithRay(groundRay, (mesh) => {
+                return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                       !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+            });
+            
+            if (hit.hit && hit.distance < closestGroundDistance) {
+                closestGroundDistance = hit.distance;
+                groundHit = hit;
+            }
+        }
         
         // Apply ground collision
-        if (groundHit.hit && groundHit.distance < 12.0) {
+        if (groundHit && closestGroundDistance < 14.0) { // Increased detection range
             const groundY = groundHit.pickedPoint.y + 2.0; // Stand on ground with offset
             if (newPosition.y <= groundY) {
                 newPosition.y = groundY;
                 this.velocity.y = Math.max(0, this.velocity.y); // Stop falling
-            this.isGrounded = true;
+                this.isGrounded = true;
             } else {
                 this.isGrounded = false;
             }
@@ -539,7 +535,7 @@ class Player {
         
         // Track movement for walking sound
         this.isMoving = (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) && 
-                       this.isGrounded && horizontalDistance > 0.01;
+                       this.isGrounded && horizontalDistance > 0.005;
     }
     
     updateCamera(deltaTime) {
