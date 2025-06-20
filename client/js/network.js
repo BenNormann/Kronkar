@@ -121,6 +121,22 @@ class NetworkManager {
                 new BABYLON.Vector3(data.direction.x, data.direction.y, data.direction.z),
                 data.playerId
             );
+            
+            // Play 3D weapon sound for remote player
+            if (this.game.audioManager && this.game.player) {
+                const shooterPosition = new BABYLON.Vector3(data.origin.x, data.origin.y, data.origin.z);
+                const listenerPosition = this.game.player.position;
+                
+                // Get weapon config for the sound (assume same weapon for now, could be sent from server)
+                const weaponConfig = this.game.player.currentWeaponConfig;
+                if (weaponConfig) {
+                    this.game.audioManager.playRemoteWeaponSound(
+                        weaponConfig, 
+                        listenerPosition, 
+                        shooterPosition
+                    );
+                }
+            }
         });
         
         // Player took damage
@@ -147,6 +163,14 @@ class NetworkManager {
                         alive: false,
                         score: remotePlayer.score
                     });
+                    
+                    // Play 3D death sound for remote player
+                    if (this.game.audioManager && this.game.player) {
+                        this.game.audioManager.playRemoteDamageSound(
+                            this.game.player.position,
+                            remotePlayer.position
+                        );
+                    }
                 }
             }
             

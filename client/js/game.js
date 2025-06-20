@@ -575,6 +575,12 @@ class Game {
         if (this.uiManager) {
             this.uiManager.update(deltaTime);
         }
+        
+        // Periodic cleanup of stuck audio (every 5 seconds)
+        if (this.audioManager && Math.floor(now / 5000) !== this.lastAudioCleanup) {
+            this.lastAudioCleanup = Math.floor(now / 5000);
+            this.audioManager.cleanupStuckSounds();
+        }
     }
     
     updateBullets(deltaTime) {

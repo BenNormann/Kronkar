@@ -531,6 +531,13 @@ class Player {
             // Reset accumulated mouse movement
             this.mouseAccumulation.x = 0;
             this.mouseAccumulation.y = 0;
+            
+            // Update 3D audio listener position and orientation
+            if (this.game.audioManager) {
+                const forward = this.camera.getDirection(BABYLON.Vector3.Forward());
+                const up = this.camera.getDirection(BABYLON.Vector3.Up());
+                this.game.audioManager.updateListener(this.camera.position, forward, up);
+            }
         }
     }
     
@@ -541,9 +548,9 @@ class Player {
     updateWalkingSound() {
         // Handle walking sound based on movement state
         if (this.isMoving && !this.wasMoving) {
-            // Just started moving - play walking sound
+            // Just started moving - play walking sound with sprint info
             if (this.game.audioManager) {
-                this.game.audioManager.playWalkingSound();
+                this.game.audioManager.playWalkingSound(this.keys.sprint);
             }
         } else if (!this.isMoving && this.wasMoving) {
             // Just stopped moving - stop walking sound
@@ -1149,6 +1156,15 @@ class RemotePlayer {
         this.deathStartTime = 0;
         this.deathDuration = 3000; // 3 seconds of flying
         
+        // Movement tracking for 3D audio
+        this.previousPosition = this.position.clone();
+        this.previousTargetPosition = this.targetPosition.clone(); // Track target position changes
+        this.isMoving = false;
+        this.movementThreshold = 0.05; // Minimum movement to consider "moving"
+        this.movementBuffer = []; // Buffer to smooth movement detection
+        this.movementBufferSize = 5; // Number of frames to consider
+        this.lastMovementCheck = 0;
+        
         this.createMesh();
     }
     
@@ -1335,6 +1351,57 @@ class RemotePlayer {
         this.nameTagTexture = dynamicTexture;
     }
     
+    updateWalkingSound() {
+        // Only check movement every few frames to reduce sensitivity
+        const now = Date.now();
+        if (now - this.lastMovementCheck < 100) { // Check every 100ms instead of every frame
+            return;
+        }
+        this.lastMovementCheck = now;
+        
+        // Check if player is moving based on TARGET position (from server) to avoid interpolation delay
+        const movementDistance = BABYLON.Vector3.Distance(this.targetPosition, this.previousTargetPosition || this.targetPosition);
+        
+        // Add to movement buffer
+        this.movementBuffer.push(movementDistance > this.movementThreshold);
+        if (this.movementBuffer.length > this.movementBufferSize) {
+            this.movementBuffer.shift(); // Remove oldest entry
+        }
+        
+        // Consider moving if majority of recent frames show movement
+        const movingFrames = this.movementBuffer.filter(moving => moving).length;
+        const wasMoving = this.isMoving;
+        this.isMoving = movingFrames >= Math.ceil(this.movementBufferSize / 2);
+        
+        // Update previous target position for next frame
+        this.previousTargetPosition = this.targetPosition.clone();
+        
+        // Handle walking sound based on movement state (only on state changes)
+        if (this.game.audioManager && this.game.player && this.alive && !this.deathAnimationPlaying) {
+            // Estimate if player is sprinting based on movement speed
+            const isSprinting = movementDistance > 0.15; // Higher threshold suggests sprinting
+            
+            if (this.isMoving && !wasMoving) {
+                // Player just started moving, play walking sound
+                this.game.audioManager.playRemoteWalkingSound(
+                    this.id,
+                    this.position,
+                    isSprinting
+                );
+            } else if (!this.isMoving && wasMoving) {
+                // Player just stopped moving, stop walking sound
+                this.game.audioManager.stopRemoteWalkingSound(this.id);
+            } else if (this.isMoving) {
+                // Player is still moving, just update volume (don't restart sound)
+                this.game.audioManager.playRemoteWalkingSound(
+                    this.id,
+                    this.position,
+                    isSprinting
+                );
+            }
+        }
+    }
+    
     updateNameTag() {
         // Update the name tag text when username changes
         if (this.nameTagTexture) {
@@ -1382,6 +1449,11 @@ class RemotePlayer {
         this.position = BABYLON.Vector3.Lerp(this.position, this.targetPosition, deltaTime * 5);
         this.rotation = BABYLON.Vector3.Lerp(this.rotation, this.targetRotation, deltaTime * 5);
         
+        // Update walking sound position in real-time as player moves
+        if (this.game.audioManager) {
+            this.game.audioManager.updateWalkingSoundPosition(this.id, this.position);
+        }
+        
         // Update mesh position (character container or fallback mesh)
         if (this.mesh) {
             this.mesh.position = this.position;
@@ -1403,6 +1475,9 @@ class RemotePlayer {
                 this.position.z
             );
         }
+        
+        // Handle 3D walking sound based on movement
+        this.updateWalkingSound();
     }
     
     updateFromServer(playerData) {
@@ -1532,6 +1607,11 @@ class RemotePlayer {
     }
     
     dispose() {
+        // Stop any walking sounds for this player
+        if (this.game.audioManager) {
+            this.game.audioManager.stopRemoteWalkingSound(this.id);
+        }
+        
         // Clean up character meshes
         if (this.characterMeshes) {
             this.characterMeshes.forEach(mesh => {
