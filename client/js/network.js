@@ -127,8 +127,20 @@ class NetworkManager {
                 const shooterPosition = new BABYLON.Vector3(data.origin.x, data.origin.y, data.origin.z);
                 const listenerPosition = this.game.player.position;
                 
-                // Get weapon config for the sound (assume same weapon for now, could be sent from server)
-                const weaponConfig = this.game.player.currentWeaponConfig;
+                // Get weapon config for the remote player who shot
+                let weaponConfig = null;
+                
+                // Try to find the remote player who shot
+                const remotePlayer = this.game.remotePlayers.get(data.playerId);
+                if (remotePlayer && remotePlayer.currentWeaponConfig) {
+                    // Use remote player's weapon if available
+                    weaponConfig = remotePlayer.currentWeaponConfig;
+                } else {
+                    // Fallback: Use a default weapon sound (Bulldog for now)
+                    // In the future, server should send weapon type with shot data
+                    weaponConfig = window.BulldogConfig;
+                }
+                
                 if (weaponConfig) {
                     this.game.audioManager.playRemoteWeaponSound(
                         weaponConfig, 

@@ -402,79 +402,157 @@ class Player {
         // Apply gravity
         this.velocity.y += this.gravity * deltaTime;
         
-        // SIMPLE & EFFICIENT COLLISION DETECTION
+        // ROBUST COLLISION DETECTION - Using sphere collision for reliability
         const moveDistance = this.velocity.scale(deltaTime);
         let newPosition = this.position.clone();
         
-        // Step 1: Try full movement first
-        const targetPosition = this.position.add(moveDistance);
+        // Player collision capsule parameters
+        const playerRadius = 1.2; // Player collision radius
+        const playerHeight = 3.0; // Player collision height
+        const stepHeight = 1.0; // Maximum step height player can walk over
         
-        // Use simple raycasting - just one ray in movement direction
+        // Step 1: Horizontal movement with sphere collision
         const horizontalDistance = Math.sqrt(moveDistance.x * moveDistance.x + moveDistance.z * moveDistance.z);
-        if (horizontalDistance > 0.01) {
+        if (horizontalDistance > 0.001) {
             const moveDir = new BABYLON.Vector3(moveDistance.x, 0, moveDistance.z).normalize();
-            const safetyDistance = Math.max(3.0, horizontalDistance * 1.2);
+            const targetHorizontalPos = new BABYLON.Vector3(
+                this.position.x + moveDistance.x,
+                this.position.y,
+                this.position.z + moveDistance.z
+            );
             
-            // Single ray from player center at mid-height
-            const rayOrigin = this.position.add(new BABYLON.Vector3(0, 8, 0));
-            const moveRay = new BABYLON.Ray(rayOrigin, moveDir);
-            const hit = this.scene.pickWithRay(moveRay, (mesh) => {
-                return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                       !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-            });
+            // Check collision using multiple sphere positions along player height
+            let canMoveHorizontal = true;
+            const checkHeights = [0.5, 1.5, 2.5]; // Bottom, middle, top of player
             
-            if (hit.hit && hit.distance < safetyDistance) {
-                // WALL SLIDING: Try movement components separately
-                let finalMovement = new BABYLON.Vector3(0, 0, 0);
+            for (let height of checkHeights) {
+                const checkPos = new BABYLON.Vector3(targetHorizontalPos.x, this.position.y + height, targetHorizontalPos.z);
+                const hit = this.scene.pick(
+                    this.scene.pointerX || 0, 
+                    this.scene.pointerY || 0,
+                    (mesh) => {
+                        if (!mesh.checkCollisions || mesh.name === 'bullet' || mesh.name === 'hitEffect' || 
+                            mesh.name.startsWith('ui_') || (mesh.metadata && mesh.metadata.isWeapon)) {
+                            return false;
+                        }
+                        
+                        // Check if point is within collision radius of mesh
+                        const meshCenter = mesh.getBoundingInfo().boundingBox.center;
+                        const distance = BABYLON.Vector3.Distance(checkPos, meshCenter);
+                        const meshSize = mesh.getBoundingInfo().boundingBox.extendSize.length();
+                        
+                        return distance < (playerRadius + meshSize * 0.8);
+                    }
+                );
                 
-                // Try X movement only
+                // Additional raycast check for thin walls
+                const rayToTarget = new BABYLON.Ray(
+                    new BABYLON.Vector3(this.position.x, this.position.y + height, this.position.z),
+                    moveDir
+                );
+                const rayHit = this.scene.pickWithRay(rayToTarget, (mesh) => {
+                    return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                           !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                });
+                
+                if ((hit && hit.hit) || (rayHit.hit && rayHit.distance < horizontalDistance + playerRadius)) {
+                    canMoveHorizontal = false;
+                    break;
+                }
+            }
+            
+            if (canMoveHorizontal) {
+                // No collision - move normally
+                newPosition.x = targetHorizontalPos.x;
+                newPosition.z = targetHorizontalPos.z;
+            } else {
+                // Try wall sliding by testing X and Z movement separately
+                let slideMovement = new BABYLON.Vector3(0, 0, 0);
+                
+                // Test X movement alone
                 if (Math.abs(moveDistance.x) > 0.001) {
-                    const xDir = new BABYLON.Vector3(Math.sign(moveDistance.x), 0, 0);
-                    const xRay = new BABYLON.Ray(rayOrigin, xDir);
-                    const xHit = this.scene.pickWithRay(xRay, (mesh) => {
-                        return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                               !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                    });
+                    const xOnlyTarget = new BABYLON.Vector3(this.position.x + moveDistance.x, this.position.y, this.position.z);
+                    let canMoveX = true;
                     
-                    if (!xHit.hit || xHit.distance > 3.0) {
-                        finalMovement.x = moveDistance.x * 0.8; // Slightly reduce sliding speed
+                    for (let height of checkHeights) {
+                        const xCheckPos = new BABYLON.Vector3(xOnlyTarget.x, this.position.y + height, xOnlyTarget.z);
+                        const xRay = new BABYLON.Ray(
+                            new BABYLON.Vector3(this.position.x, this.position.y + height, this.position.z),
+                            new BABYLON.Vector3(Math.sign(moveDistance.x), 0, 0)
+                        );
+                        const xHit = this.scene.pickWithRay(xRay, (mesh) => {
+                            return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                                   !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                        });
+                        
+                        if (xHit.hit && xHit.distance < Math.abs(moveDistance.x) + playerRadius) {
+                            canMoveX = false;
+                            break;
+                        }
+                    }
+                    
+                    if (canMoveX) {
+                        slideMovement.x = moveDistance.x * 0.9; // Slightly damped sliding
                     }
                 }
                 
-                // Try Z movement only
+                // Test Z movement alone
                 if (Math.abs(moveDistance.z) > 0.001) {
-                    const zDir = new BABYLON.Vector3(0, 0, Math.sign(moveDistance.z));
-                    const zRay = new BABYLON.Ray(rayOrigin, zDir);
-                    const zHit = this.scene.pickWithRay(zRay, (mesh) => {
-                        return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                               !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                    });
+                    const zOnlyTarget = new BABYLON.Vector3(this.position.x, this.position.y, this.position.z + moveDistance.z);
+                    let canMoveZ = true;
                     
-                    if (!zHit.hit || zHit.distance > 3.0) {
-                        finalMovement.z = moveDistance.z * 0.8; // Slightly reduce sliding speed
+                    for (let height of checkHeights) {
+                        const zCheckPos = new BABYLON.Vector3(zOnlyTarget.x, this.position.y + height, zOnlyTarget.z);
+                        const zRay = new BABYLON.Ray(
+                            new BABYLON.Vector3(this.position.x, this.position.y + height, this.position.z),
+                            new BABYLON.Vector3(0, 0, Math.sign(moveDistance.z))
+                        );
+                        const zHit = this.scene.pickWithRay(zRay, (mesh) => {
+                            return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                                   !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                        });
+                        
+                        if (zHit.hit && zHit.distance < Math.abs(moveDistance.z) + playerRadius) {
+                            canMoveZ = false;
+                            break;
+                        }
+                    }
+                    
+                    if (canMoveZ) {
+                        slideMovement.z = moveDistance.z * 0.9; // Slightly damped sliding
                     }
                 }
                 
                 // Apply sliding movement
-                newPosition.x = this.position.x + finalMovement.x;
-                newPosition.z = this.position.z + finalMovement.z;
-            } else {
-                // No collision - move normally
-                newPosition.x = targetPosition.x;
-                newPosition.z = targetPosition.z;
+                newPosition.x = this.position.x + slideMovement.x;
+                newPosition.z = this.position.z + slideMovement.z;
             }
         }
         
         // Step 2: Enhanced ground detection for thin floors and stairs
         newPosition.y = this.position.y + moveDistance.y;
         
-        // Multiple ground rays to catch thin floors during movement
+        // Enhanced ground detection with more rays around feet to prevent ledge glitching
+        const footLevel = newPosition.y + .1; // At actual foot level (player height is ~2 units)
         const groundCheckPositions = [
-            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z), // Center
-            new BABYLON.Vector3(newPosition.x + 1.2, newPosition.y + 2, newPosition.z), // Right
-            new BABYLON.Vector3(newPosition.x - 1.2, newPosition.y + 2, newPosition.z), // Left
-            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z + 1.2), // Forward
-            new BABYLON.Vector3(newPosition.x, newPosition.y + 2, newPosition.z - 1.2)  // Backward
+            // Core positions (lowered to foot level)
+            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z), // Center
+            new BABYLON.Vector3(newPosition.x + 1.2, footLevel, newPosition.z), // Right
+            new BABYLON.Vector3(newPosition.x - 1.2, footLevel, newPosition.z), // Left
+            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z + 1.2), // Forward
+            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z - 1.2), // Backward
+            
+            // Additional foot-level rays for small ledge detection
+            new BABYLON.Vector3(newPosition.x + 0.6, footLevel, newPosition.z + 0.6), // Front-right diagonal
+            new BABYLON.Vector3(newPosition.x - 0.6, footLevel, newPosition.z + 0.6), // Front-left diagonal
+            new BABYLON.Vector3(newPosition.x + 0.6, footLevel, newPosition.z - 0.6), // Back-right diagonal
+            new BABYLON.Vector3(newPosition.x - 0.6, footLevel, newPosition.z - 0.6), // Back-left diagonal
+            
+            // Closer foot positions for fine detection
+            new BABYLON.Vector3(newPosition.x + 0.3, footLevel, newPosition.z), // Close right
+            new BABYLON.Vector3(newPosition.x - 0.3, footLevel, newPosition.z), // Close left
+            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z + 0.3), // Close forward
+            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z - 0.3), // Close backward
         ];
         
         // FOOT-LEVEL RAYS for stairs - project forward in movement direction
@@ -496,6 +574,21 @@ class Player {
             }
         }
         
+        // Additional anti-glitch rays: check at multiple heights very close to foot level
+        const antiGlitchHeights = [-0.1, 0.0, 0.1]; // Just below, at, and just above foot level
+        for (let height of antiGlitchHeights) {
+            const baseY = footLevel + height;
+            // Ring of rays around the player at different heights
+            const angleStep = Math.PI / 4; // 8 directions (45 degrees apart)
+            for (let i = 0; i < 8; i++) {
+                const angle = i * angleStep;
+                const radius = 0.4; // Close to player center
+                const x = newPosition.x + Math.cos(angle) * radius;
+                const z = newPosition.z + Math.sin(angle) * radius;
+                groundCheckPositions.push(new BABYLON.Vector3(x, baseY, z));
+            }
+        }
+        
         let groundHit = null;
         let closestGroundDistance = Infinity;
         
@@ -513,8 +606,8 @@ class Player {
             }
         }
         
-        // Apply ground collision
-        if (groundHit && closestGroundDistance < 14.0) {
+        // Apply ground collision with tighter distance check
+        if (groundHit && closestGroundDistance < 5.0) {
             const groundY = groundHit.pickedPoint.y + 2.0;
             if (newPosition.y <= groundY) {
                 newPosition.y = groundY;
@@ -1182,6 +1275,9 @@ class RemotePlayer {
         this.score = playerData.score || 0; // Kill score tracking
         this.username = playerData.username || `Player ${this.id.slice(-4)}`; // Username or default
         
+        // Weapon tracking (assign random weapon for variety)
+        this.currentWeaponConfig = this.getRandomWeapon();
+        
         // Interpolation
         this.targetPosition = this.position.clone();
         this.targetRotation = this.rotation.clone();
@@ -1557,6 +1653,11 @@ class RemotePlayer {
             this.score = playerData.score;
         }
         
+        // Update weapon if provided (future server enhancement)
+        if (playerData.weapon) {
+            this.updateWeapon(playerData.weapon);
+        }
+        
         // Check if player just died
         const wasAlive = this.alive;
         const nowAlive = playerData.alive;
@@ -1653,6 +1754,28 @@ class RemotePlayer {
         }
     }
     
+    getRandomWeapon() {
+        // Randomly assign weapons to remote players for audio variety
+        // Use player ID as seed for consistent weapon per player
+        const seed = this.id.charCodeAt(this.id.length - 1) % 2;
+        return seed === 0 ? window.BulldogConfig : window.L118A1Config;
+    }
+
+    updateWeapon(weaponType) {
+        // Update remote player's weapon config based on weapon type
+        switch (weaponType) {
+            case 'sniper':
+            case 'l118a1':
+                this.currentWeaponConfig = window.L118A1Config;
+                break;
+            case 'bulldog':
+            case 'assault':
+            default:
+                this.currentWeaponConfig = window.BulldogConfig;
+                break;
+        }
+    }
+
     dispose() {
         // Stop any walking sounds for this player
         if (this.game.audioManager) {

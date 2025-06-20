@@ -117,7 +117,7 @@ class AudioManager {
         }
     }
     
-    // Optimized distance calculation using squared distance
+    // Optimized distance calculation using squared distance with steeper falloff
     calculateDistanceVolume(listenerPosition, sourcePosition, maxDistance = 200, baseVolume = 1.0) {
         const dx = listenerPosition.x - sourcePosition.x;
         const dy = listenerPosition.y - sourcePosition.y;
@@ -128,7 +128,10 @@ class AudioManager {
         if (distanceSquared >= maxDistanceSquared) return 0;
         
         const distance = Math.sqrt(distanceSquared);
-        return baseVolume * Math.max(0, 1 - (distance / maxDistance));
+        const normalizedDistance = distance / maxDistance;
+        // Apply exponential falloff for steeper decay (25% more aggressive)
+        const falloffFactor = Math.pow(1 - normalizedDistance, 1.25);
+        return baseVolume * Math.max(0, falloffFactor);
     }
 
     async play3DSound(soundPath, listenerPosition, sourcePosition, baseVolume = 1.0, maxDistance = 200, loop = false) {
@@ -184,7 +187,7 @@ class AudioManager {
             panner.distanceModel = 'linear';
             panner.refDistance = maxDistance * 0.1;
             panner.maxDistance = maxDistance;
-            panner.rolloffFactor = 0.3;
+            panner.rolloffFactor = 0.4;
             
             // Set position
             const currentTime = this.audioContext.currentTime;
@@ -238,7 +241,7 @@ class AudioManager {
 
     async playRemoteWeaponSound(weaponConfig, listenerPosition, sourcePosition) {
         if (!weaponConfig?.audio?.fireSound) return null;
-        return this.play3DSound(weaponConfig.audio.fireSound, listenerPosition, sourcePosition, weaponConfig.audio.volume || 1.0, 2000);
+        return this.play3DSound(weaponConfig.audio.fireSound, listenerPosition, sourcePosition, weaponConfig.audio.volume || 1.0, 1500);
     }
 
     // Damage sounds
@@ -369,7 +372,7 @@ class AudioManager {
             const randomStep = stepSounds[Math.floor(Math.random() * stepSounds.length)];
             
             try {
-                const source = await this.playPositionalAudio(randomStep, currentPosition, 0.6, 1200, false);
+                const source = await this.playPositionalAudio(randomStep, currentPosition, 0.6, 900, false);
                 
                 if (source?.playbackRate) {
                     source.playbackRate.setValueAtTime(isSprinting ? 1.4 : 1.0, this.audioContext.currentTime);

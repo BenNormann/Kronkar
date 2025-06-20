@@ -176,15 +176,34 @@ class Game {
                             mesh.checkCollisions = true;  // For player physics
                             mesh.isPickable = true;       // For bullet collision
                             
+                            // Ensure collision is properly computed
+                            mesh.computeWorldMatrix(true);
+                            mesh.refreshBoundingInfo();
+                            
+                            // Force collision mesh creation for better detection
+                            if (!mesh.getBoundingInfo) {
+                                mesh.createOrUpdateSubmesh();
+                            }
+                            
                             // Set specific collision properties for different mesh types
                             if (mesh.name.toLowerCase().includes('ground') || 
                                 mesh.name.toLowerCase().includes('floor')) {
-                                mesh.metadata = { type: 'ground' };
+                                mesh.metadata = { type: 'ground', collisionPriority: 10 };
                             } else if (mesh.name.toLowerCase().includes('wall') ||
                                        mesh.name.toLowerCase().includes('building')) {
-                                mesh.metadata = { type: 'wall' };
+                                mesh.metadata = { type: 'wall', collisionPriority: 8 };
                             } else {
-                                mesh.metadata = { type: 'environment' };
+                                mesh.metadata = { type: 'environment', collisionPriority: 5 };
+                            }
+                            
+                            // Additional collision settings for small meshes
+                            const boundingInfo = mesh.getBoundingInfo();
+                            if (boundingInfo) {
+                                const size = boundingInfo.boundingBox.extendSize;
+                                // Mark small meshes for special handling
+                                if (size.x < 5 || size.y < 5 || size.z < 5) {
+                                    mesh.metadata.isSmallMesh = true;
+                                }
                             }
                         }
                     }
