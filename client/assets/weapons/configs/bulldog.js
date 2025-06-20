@@ -10,7 +10,7 @@ const BulldogConfig = {
         folder: "assets/weapons/bulldog/",
         file: "scene.gltf",
         scale: { x: 0.3, y: 0.3, z: 0.3 },
-        position: { x: 0.5, y: -0.3, z: 1.0 },
+        position: { x: 0.2, y: -0.3, z: 1.0 }, // Moved left by 0.3 total (0.1 more)
         rotation: { x: 0, y: 0, z: 0 }
     },
     
@@ -30,7 +30,7 @@ const BulldogConfig = {
     
     // Barrel Configuration
     barrel: {
-        offset: { x: 0.1, y: 0.05, z: 0.8 },
+        offset: { x: 0.0, y: 0.0, z: 0.8 }, // Centered barrel position for accurate shooting
         rayOffset: 1.0 // Distance to move ray origin forward (much further to clear weapon geometry)
     },
     
@@ -47,10 +47,10 @@ const BulldogConfig = {
         muzzleFlashDuration: 0.1
     },
     
-    // Audio (for future implementation)
+    // Audio Configuration
     audio: {
-        fireSound: "bulldog_fire.wav",
-        reloadSound: "bulldog_reload.wav",
+        fireSound: "assets/sounds/Bulldog.m4a",
+        reloadSound: "assets/sounds/Reload.m4a",
         volume: 0.8
     }
 };

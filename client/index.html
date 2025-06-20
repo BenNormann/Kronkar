@@ -94,6 +94,18 @@
             font-weight: bold;
         }
 
+        #fpsCounter {
+            position: absolute;
+            top: 50px;
+            right: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #00ff00;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+
         #deathScreen {
             position: absolute;
             top: 0;
@@ -202,7 +214,7 @@
             transform: translate(-50%, -50%);
             background: rgba(0, 0, 0, 0.8);
             color: white;
-            padding: 20px;
+            padding: 30px;
             border-radius: 10px;
             font-size: 18px;
             text-align: center;
@@ -210,10 +222,69 @@
             pointer-events: all;
             cursor: pointer;
             display: none;
+            min-width: 350px;
         }
 
         #clickToStart:hover {
             background: rgba(0, 0, 0, 0.9);
+        }
+
+        #weaponSelection {
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        #weaponSelection label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #weaponDropdown {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 2px solid #007acc;
+            border-radius: 5px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        #weaponDropdown:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #weaponDropdown option {
+            background: #333;
+            color: white;
+            padding: 10px;
+        }
+
+        #weaponDescription {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+            font-style: italic;
+            min-height: 20px;
+        }
+
+        #startButton {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s ease;
+        }
+
+        #startButton:hover {
+            background: #005a9e;
         }
     </style>
 </head>
@@ -229,12 +300,23 @@
         </div>
         
         <div id="playerCount">Players: 0</div>
+        <div id="fpsCounter">FPS: 60</div>
         
         <div id="connectionStatus" class="connecting">Connecting...</div>
         
         <div id="clickToStart">
             <h3>Welcome to Kronkar FPS!</h3>
-            <p>Click anywhere to start playing</p>
+            
+            <div id="weaponSelection">
+                <label for="weaponDropdown">Choose Your Weapon:</label>
+                <select id="weaponDropdown">
+                    <option value="bulldog">Bulldog - Assault Rifle</option>
+                    <option value="l118a1">L118A1 - Sniper Rifle</option>
+                </select>
+                <div id="weaponDescription">Fully automatic assault rifle with balanced stats</div>
+            </div>
+            
+            <button id="startButton">Start Game</button>
             <small>Mouse controls will be enabled</small>
         </div>
         
@@ -244,7 +326,10 @@
                 <li>WASD - Move</li>
                 <li>Mouse - Look around</li>
                 <li>Space - Jump</li>
+                <li>Shift - Sprint</li>
                 <li>Left Click - Shoot</li>
+                <li>1 - Bulldog Rifle</li>
+                <li>2 - L118A1 Sniper</li>
                 <li>ESC - Release mouse</li>
             </ul>
         </div>
@@ -292,8 +377,13 @@
     
     <!-- Weapon Configs -->
     <script src="assets/weapons/configs/bulldog.js"></script>
+    <script src="assets/weapons/configs/l118a1.js"></script>
+    
+    <!-- Character Configs -->
+    <script src="assets/characters/rupol/character_config.js"></script>
     
     <!-- Game Scripts -->
+    <script src="js/audio.js"></script>
     <script src="js/asset_loader.js"></script>
     <script src="js/game.js"></script>
     <script src="js/player.js"></script>

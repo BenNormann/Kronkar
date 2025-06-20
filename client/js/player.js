@@ -20,10 +20,11 @@ class Player {
         
                   // Movement settings - increased for large dust2 map
           this.speed = 150;  // Fast enough for large map but not breaking collision
+          this.horizontalSpeed = 75; // Half speed for left/right strafe movement
           this.sprintSpeed = 225; // 1.5x normal speed when sprinting
           this.jumpForce = 70; // Higher jump for better map navigation (doubled)
-          this.mouseSensitivity = 0.003;
-          this.isGrounded = false;
+        this.mouseSensitivity = 0.003;
+        this.isGrounded = false;
           this.gravity = -200; // Stronger gravity but not breaking collision
         
         // Camera smoothing
@@ -33,6 +34,7 @@ class Player {
         // Shooting
         this.canShoot = true;
         this.lastShotTime = 0;
+        this.semiAutoLock = false; // For semi-automatic weapons
         
         // Pointer lock state
         this.isPointerLocked = false;
@@ -60,6 +62,10 @@ class Player {
         this.mouseMovement = { x: 0, y: 0 };
         this.mouseAccumulation = { x: 0, y: 0 };
         
+        // Walking sound
+        this.isMoving = false;
+        this.wasMoving = false;
+        
         // Debug player position
         console.log(`PLAYER SPAWNED at position: ${this.position.toString()}`);
         
@@ -69,8 +75,16 @@ class Player {
     
     async initWeapon() {
         try {
-            // Set current weapon config
+            // Get selected weapon from game, default to bulldog
+            const selectedWeapon = this.game.selectedWeapon || 'bulldog';
+            
+            // Set current weapon config based on selection
+            if (selectedWeapon === 'l118a1' && window.L118A1Config) {
+                this.currentWeaponConfig = window.L118A1Config;
+            } else {
             this.currentWeaponConfig = window.BulldogConfig;
+            }
+            
             console.log('Loading weapon:', this.currentWeaponConfig.name);
             
             // Initialize asset loader
@@ -102,21 +116,45 @@ class Player {
         }
         
         console.log(`Attaching ${this.currentWeaponConfig.name} to camera...`);
+        console.log(`Found ${this.weaponMeshes.length} weapon meshes to attach`);
         
         // Create weapon parent for positioning
         this.weapon = new BABYLON.TransformNode('weaponParent', this.scene);
         
         // Attach all weapon meshes to the weapon parent
         this.weaponMeshes.forEach((mesh, index) => {
+            console.log(`=== MESH ${index} ===`);
+            console.log(`Name: "${mesh.name}"`);
+            console.log(`Original position: ${mesh.position.toString()}`);
+            console.log(`Original rotation: ${mesh.rotation.toString()}`);
+            console.log(`Original scaling: ${mesh.scaling.toString()}`);
+            console.log(`Has parent: ${mesh.parent ? mesh.parent.name : 'none'}`);
+            
             mesh.parent = this.weapon;
             mesh.setEnabled(true);
+            mesh.isVisible = true; // Explicitly set visible
+            
+            console.log(`After parenting - position: ${mesh.position.toString()}`);
+            console.log(`After parenting - world position: ${mesh.getAbsolutePosition().toString()}`);
         });
         
         // Position weapon using config
         const config = this.currentWeaponConfig.model;
+        
+        // Apply transformations uniformly to all weapons
         this.weapon.position = new BABYLON.Vector3(config.position.x, config.position.y, config.position.z);
         this.weapon.rotation = new BABYLON.Vector3(config.rotation.x, config.rotation.y, config.rotation.z);
         this.weapon.scaling = new BABYLON.Vector3(config.scale.x, config.scale.y, config.scale.z);
+        
+        // Log mesh information after transformations are applied
+        console.log(`=== WEAPON MESH DETAILS ===`);
+        this.weaponMeshes.forEach((mesh, index) => {
+            console.log(`Mesh ${index}: "${mesh.name}" - Position: ${mesh.position.toString()}`);
+        });
+        
+        console.log(`Weapon positioned at: ${this.weapon.position.toString()}`);
+        console.log(`Weapon rotation: ${this.weapon.rotation.toString()}`);
+        console.log(`Weapon scaling: ${this.weapon.scaling.toString()}`);
         
         // Store the rest position and rotation for recoil animations
         this.weaponRestPosition = this.weapon.position.clone();
@@ -124,16 +162,69 @@ class Player {
         
         // Parent weapon to camera so it follows camera movement
         this.weapon.parent = this.camera;
+        console.log(`Weapon parented to camera: ${this.camera.name}`);
         
-        // Make sure weapon renders on top and doesn't interfere with raycasting
-        this.weaponMeshes.forEach((mesh) => {
+        // Optimize weapon rendering and disable unnecessary features
+        this.weaponMeshes.forEach((mesh, index) => {
             mesh.renderingGroupId = 1; // Render after scene
             mesh.isPickable = false; // Don't interfere with shooting raycasts
             mesh.checkCollisions = false; // Also disable physics collisions
             mesh.metadata = { isWeapon: true }; // Add weapon tag for filtering
+            
+            // Performance optimizations for weapon meshes (but don't freeze world matrix!)
+            mesh.alwaysSelectAsActiveMesh = true; // Skip frustum culling for weapons
+            mesh.doNotSyncBoundingInfo = true; // Skip bounding info updates
+            // DON'T freeze world matrix - weapons need to move with camera
+            
+            console.log(`Mesh ${index} final setup: renderingGroup=${mesh.renderingGroupId}, visible=${mesh.isVisible}, enabled=${mesh.isEnabled()}`);
         });
         
         console.log(`${this.currentWeaponConfig.name} attachment complete`);
+    }
+    
+    // Method to switch weapons during gameplay
+    async switchWeapon(weaponType) {
+        console.log(`Switching to weapon: ${weaponType}`);
+        
+        // Dispose of current weapon
+        if (this.weapon) {
+            this.weapon.dispose();
+            this.weapon = null;
+        }
+        
+
+        
+        // Clear weapon meshes
+        this.weaponMeshes.forEach(mesh => {
+            if (mesh) mesh.dispose();
+        });
+        this.weaponMeshes = [];
+        
+        // Set new weapon config
+        if (weaponType === 'l118a1' && window.L118A1Config) {
+            this.currentWeaponConfig = window.L118A1Config;
+        } else {
+            this.currentWeaponConfig = window.BulldogConfig;
+        }
+        
+        // Load new weapon
+        try {
+            const result = await this.assetLoader.loadModel(
+                this.currentWeaponConfig.name.toLowerCase(), 
+                this.currentWeaponConfig.model.folder, 
+                this.currentWeaponConfig.model.file
+            );
+            
+            if (result.meshes && result.meshes.length > 0) {
+                this.weaponMeshes = result.meshes;
+                this.attachWeaponToCamera();
+                console.log(`Switched to ${this.currentWeaponConfig.name}`);
+            } else {
+                console.error('No meshes found in the new weapon model');
+            }
+        } catch (error) {
+            console.error('Failed to switch weapon:', error);
+        }
     }
     
     setupControls() {
@@ -228,11 +319,12 @@ class Player {
         this.updateMovement(deltaTime);
         this.updateCamera(deltaTime);
         this.updateShooting(deltaTime);
+        this.updateWalkingSound();
         this.updateNetworking();
     }
     
     updateMovement(deltaTime) {
-        const moveVector = new BABYLON.Vector3(0, 0, 0);
+        let moveVector = new BABYLON.Vector3(0, 0, 0);
         
         // Calculate movement direction based on camera rotation
         const forward = this.camera.getDirection(BABYLON.Vector3.Forward());
@@ -244,33 +336,45 @@ class Player {
         forward.normalize();
         right.normalize();
         
-        // Apply movement inputs
+        // Apply movement inputs with separate speeds for forward/backward vs left/right
+        let forwardBackwardVector = new BABYLON.Vector3(0, 0, 0);
+        let leftRightVector = new BABYLON.Vector3(0, 0, 0);
+        
+        // Handle forward/backward movement
         if (this.keys.forward) {
-            moveVector.addInPlace(forward);
+            forwardBackwardVector.addInPlace(forward);
         }
         if (this.keys.backward) {
-            moveVector.subtractInPlace(forward);
-        }
-        if (this.keys.left) {
-            moveVector.subtractInPlace(right);
-        }
-        if (this.keys.right) {
-            moveVector.addInPlace(right);
+            forwardBackwardVector.subtractInPlace(forward);
         }
         
-        // Apply speed with diagonal movement reduction and sprint functionality
-        if (moveVector.length() > 0) {
-            // Check if moving diagonally (more than one direction key pressed)
-            const isDiagonal = (this.keys.forward || this.keys.backward) && (this.keys.left || this.keys.right);
-            
-            // Determine base speed (sprint or normal)
+        // Handle left/right movement
+        if (this.keys.left) {
+            leftRightVector.subtractInPlace(right);
+        }
+        if (this.keys.right) {
+            leftRightVector.addInPlace(right);
+        }
+        
+        // Apply different speeds to each movement type
+        if (forwardBackwardVector.length() > 0) {
             const baseSpeed = this.keys.sprint ? this.sprintSpeed : this.speed;
-            
-            // Apply diagonal speed reduction (2/3 of normal speed)
-            const finalSpeed = isDiagonal ? baseSpeed * (2/3) : baseSpeed;
-            
-            moveVector.normalize();
-            moveVector.scaleInPlace(finalSpeed);
+            forwardBackwardVector.normalize();
+            forwardBackwardVector.scaleInPlace(baseSpeed);
+        }
+        
+        if (leftRightVector.length() > 0) {
+            const horizontalBaseSpeed = this.keys.sprint ? this.sprintSpeed * 0.5 : this.horizontalSpeed;
+            leftRightVector.normalize();
+            leftRightVector.scaleInPlace(horizontalBaseSpeed);
+        }
+        
+        // Combine movement vectors
+        moveVector = forwardBackwardVector.add(leftRightVector);
+        
+        // Apply diagonal movement reduction if moving in both directions
+        if (forwardBackwardVector.length() > 0 && leftRightVector.length() > 0) {
+            moveVector.scaleInPlace(2/3); // Reduce diagonal movement speed
         }
         
         // Apply horizontal velocity
@@ -372,7 +476,7 @@ class Player {
             if (newPosition.y <= groundY) {
                 newPosition.y = groundY;
                 this.velocity.y = Math.max(0, this.velocity.y); // Stop falling
-                this.isGrounded = true;
+            this.isGrounded = true;
             } else {
                 this.isGrounded = false;
             }
@@ -389,6 +493,10 @@ class Player {
         this.rotation.x = this.camera.rotation.x;
         this.rotation.y = this.camera.rotation.y;
         this.rotation.z = this.camera.rotation.z;
+        
+        // Track movement for walking sound
+        this.isMoving = (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) && 
+                       this.isGrounded && horizontalDistance > 0.01;
     }
     
     updateCamera(deltaTime) {
@@ -416,21 +524,60 @@ class Player {
         return start + (end - start) * factor;
     }
     
+    updateWalkingSound() {
+        // Handle walking sound based on movement state
+        if (this.isMoving && !this.wasMoving) {
+            // Just started moving - play walking sound
+            if (this.game.audioManager) {
+                this.game.audioManager.playWalkingSound();
+            }
+        } else if (!this.isMoving && this.wasMoving) {
+            // Just stopped moving - stop walking sound
+            if (this.game.audioManager) {
+                this.game.audioManager.stopWalkingSound();
+            }
+        }
+        
+        // Update previous movement state
+        this.wasMoving = this.isMoving;
+    }
+    
     updateShooting(deltaTime) {
         if (!this.currentWeaponConfig) return;
         
         const currentTime = Date.now() / 1000;
         const cooldownTime = 60 / this.currentWeaponConfig.fireRate; // Convert RPM to seconds
         
+        // Handle different fire modes
+        if (this.currentWeaponConfig.fireMode === 'semi') {
+            // Semi-automatic: only shoot on key press, not hold
+            if (this.keys.shoot && this.canShoot && this.isPointerLocked && !this.justGainedPointerLock && (currentTime - this.lastShotTime) >= cooldownTime && !this.semiAutoLock) {
+                this.shoot();
+                this.lastShotTime = currentTime;
+                this.semiAutoLock = true; // Prevent continuous fire
+            }
+            
+            // Reset semi-auto lock when key is released
+            if (!this.keys.shoot) {
+                this.semiAutoLock = false;
+            }
+        } else {
+            // Automatic mode: shoot while holding
         if (this.keys.shoot && this.canShoot && this.isPointerLocked && !this.justGainedPointerLock && (currentTime - this.lastShotTime) >= cooldownTime) {
             this.shoot();
             this.lastShotTime = currentTime;
+            }
         }
     }
     
     shoot() {
         // Calculate barrel position and direction
         const { origin, direction } = this.getBarrelPositionAndDirection();
+        
+        // Play weapon fire sound
+        if (this.game.audioManager && this.currentWeaponConfig) {
+            this.game.audioManager.playWeaponSound(this.currentWeaponConfig);
+        }
         
         // Add weapon recoil animation
         this.addWeaponRecoil();
@@ -473,7 +620,7 @@ class Player {
         
         // Optional: Create a small visual indicator at barrel position for debugging
         // Temporarily enable debug indicator to troubleshoot bullet issues
-        this.createBarrelDebugIndicator(rayOrigin);
+            this.createBarrelDebugIndicator(rayOrigin);
         
         return {
             origin: rayOrigin,
@@ -482,43 +629,157 @@ class Player {
     }
     
     createBarrelDebugIndicator(position) {
-        // Create a muzzle flash effect
+        // Check if this is a sniper rifle for enhanced muzzle flash
+        const isSniper = this.currentWeaponConfig && this.currentWeaponConfig.type === 'sniper_rifle';
+        
+        if (isSniper) {
+            this.createSniperMuzzleFlash(position);
+        } else {
+            this.createStandardMuzzleFlash(position);
+        }
+    }
+    
+    createSniperMuzzleFlash(position) {
+        // Create dramatic sniper muzzle flash with multiple elements
+        const muzzleFlashGroup = new BABYLON.TransformNode('sniperMuzzleFlash', this.scene);
+        
+        // Main bright flash (larger and brighter than standard)
+        const mainFlash = BABYLON.MeshBuilder.CreateSphere('mainFlash', {
+            diameter: 1.8 // Much larger for sniper
+        }, this.scene);
+        mainFlash.parent = muzzleFlashGroup;
+        
+        // Secondary expanding ring flash
+        const ringFlash = BABYLON.MeshBuilder.CreateTorus('ringFlash', {
+            diameter: 2.2,
+            thickness: 0.3
+        }, this.scene);
+        ringFlash.parent = muzzleFlashGroup;
+        
+        // Forward blast cone
+        const blastCone = BABYLON.MeshBuilder.CreateCylinder('blastCone', {
+            height: 1.5,
+            diameterTop: 1.2,
+            diameterBottom: 0.3
+        }, this.scene);
+        blastCone.parent = muzzleFlashGroup;
+        blastCone.position.z = 0.75; // Forward from center
+        blastCone.rotation.x = Math.PI / 2; // Point forward
+        
+        // Position relative to weapon so it moves with the weapon
+        if (this.weapon && this.currentWeaponConfig) {
+            muzzleFlashGroup.parent = this.weapon;
+            const config = this.currentWeaponConfig.barrel;
+            
+            // Use the same method as standard weapons - convert world position to local weapon space
+            const weaponMatrix = this.weapon.getWorldMatrix();
+            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
+            
+            // For sniper, adjust the local position to move flash to the right side
+            if (this.currentWeaponConfig.type === 'sniper_rifle') {
+                // Add offset to move flash forward and to the right from player's perspective
+                localPosition.x += 2; // Move forward
+                localPosition.z -= 1.3; // Move to right
+            }
+            
+            muzzleFlashGroup.position = localPosition;
+        } else {
+            // Fallback to world position if no weapon
+            muzzleFlashGroup.position = position;
+        }
+        
+        // Create materials for each element
+        const mainMaterial = new BABYLON.StandardMaterial('sniperMainFlash', this.scene);
+        mainMaterial.emissiveColor = new BABYLON.Color3(1, 0.9, 0.6); // Bright white-yellow
+        mainMaterial.diffuseColor = new BABYLON.Color3(1, 0.8, 0.3);
+        mainMaterial.emissiveIntensity = 3.5; // Very bright
+        mainFlash.material = mainMaterial;
+        
+        const ringMaterial = new BABYLON.StandardMaterial('sniperRingFlash', this.scene);
+        ringMaterial.emissiveColor = new BABYLON.Color3(1, 0.6, 0.2); // Orange ring
+        ringMaterial.diffuseColor = new BABYLON.Color3(1, 0.5, 0.1);
+        ringMaterial.emissiveIntensity = 2.5;
+        ringFlash.material = ringMaterial;
+        
+        const coneMaterial = new BABYLON.StandardMaterial('sniperConeFlash', this.scene);
+        coneMaterial.emissiveColor = new BABYLON.Color3(1, 0.7, 0.3); // Yellow-orange blast
+        coneMaterial.diffuseColor = new BABYLON.Color3(1, 0.6, 0.2);
+        coneMaterial.emissiveIntensity = 2.0;
+        coneMaterial.alpha = 0.8; // Semi-transparent
+        blastCone.material = coneMaterial;
+        
+        // Make all elements non-collidable
+        [mainFlash, ringFlash, blastCone].forEach(mesh => {
+            mesh.isPickable = false;
+            mesh.checkCollisions = false;
+        });
+        
+        // Animate the muzzle flash for more dramatic effect
+        const expandAnimation = new BABYLON.Animation(
+            'muzzleFlashExpand',
+            'scaling',
+            60,
+            BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        
+        const expandKeys = [
+            { frame: 0, value: new BABYLON.Vector3(0.1, 0.1, 0.1) },
+            { frame: 3, value: new BABYLON.Vector3(1.2, 1.2, 1.2) },
+            { frame: 12, value: new BABYLON.Vector3(0.3, 0.3, 0.3) }
+        ];
+        expandAnimation.setKeys(expandKeys);
+        
+        // Apply animation to main flash
+        this.scene.beginDirectAnimation(mainFlash, [expandAnimation], 0, 12, false);
+        
+        // Ring flash animation (delayed and different pattern)
+        const ringExpandAnimation = expandAnimation.clone();
+        ringExpandAnimation.name = 'ringFlashExpand';
+        const ringExpandKeys = [
+            { frame: 0, value: new BABYLON.Vector3(0.2, 0.2, 0.2) },
+            { frame: 5, value: new BABYLON.Vector3(1.5, 1.5, 1.5) },
+            { frame: 15, value: new BABYLON.Vector3(0.1, 0.1, 0.1) }
+        ];
+        ringExpandAnimation.setKeys(ringExpandKeys);
+        this.scene.beginDirectAnimation(ringFlash, [ringExpandAnimation], 0, 15, false);
+        
+        // Longer duration for sniper muzzle flash (150ms)
+        setTimeout(() => {
+            muzzleFlashGroup.dispose();
+        }, 150);
+    }
+    
+    createStandardMuzzleFlash(position) {
+        // Create standard muzzle flash for other weapons
         const muzzleFlash = BABYLON.MeshBuilder.CreateSphere('muzzleFlash', {
-            diameter: 0.8 // Bigger for more dramatic muzzle flash effect
+            diameter: 0.8
         }, this.scene);
         
-        // If we have a weapon, attach the muzzle flash to it so it moves with the gun
+        // Position relative to weapon so it moves with the weapon
         if (this.weapon && this.currentWeaponConfig) {
-            // Parent the muzzle flash to the weapon so it moves with it
+            // Parent to weapon but use the calculated world position converted to local space
             muzzleFlash.parent = this.weapon;
             
-            // Set position relative to weapon using barrel offset
-            const config = this.currentWeaponConfig.barrel;
-            muzzleFlash.position = new BABYLON.Vector3(
-                config.offset.x - .7, // Shift left from player perspective
-                config.offset.y + .2, // Shift left from player perspective
-                config.offset.z + config.rayOffset // Position at the end of the barrel
-            );
+            // Convert world position to local weapon space
+            const weaponMatrix = this.weapon.getWorldMatrix();
+            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
+            muzzleFlash.position = localPosition;
         } else {
             // Fallback to world position if no weapon
             muzzleFlash.position = position;
         }
         
         muzzleFlash.material = new BABYLON.StandardMaterial('muzzleFlashMat', this.scene);
-        
-        // Bright orange/yellow muzzle flash colors
-        muzzleFlash.material.emissiveColor = new BABYLON.Color3(1, 0.6, 0); // Bright orange glow
-        muzzleFlash.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2); // Yellow-orange
-        muzzleFlash.material.specularColor = new BABYLON.Color3(1, 1, 0.5); // Bright specular highlight
-        
-        // Make it very bright and glowing
+        muzzleFlash.material.emissiveColor = new BABYLON.Color3(1, 0.6, 0);
+        muzzleFlash.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2);
+        muzzleFlash.material.specularColor = new BABYLON.Color3(1, 1, 0.5);
         muzzleFlash.material.emissiveIntensity = 2.0;
         
-        // Make it non-collidable
         muzzleFlash.isPickable = false;
         muzzleFlash.checkCollisions = false;
         
-        // Very brief duration like a real muzzle flash (50ms)
+        // Standard duration (50ms)
         setTimeout(() => {
             muzzleFlash.dispose();
         }, 50);
@@ -607,6 +868,11 @@ class Player {
     takeDamage(damage) {
         if (!this.alive) return;
         
+        // Play damage sound effect
+        if (this.game.audioManager) {
+            this.game.audioManager.playDamageSound();
+        }
+        
         this.health -= damage;
         if (this.health <= 0) {
             this.health = 0;
@@ -622,6 +888,12 @@ class Player {
     die() {
         this.alive = false;
         console.log('Player died');
+        
+        // Stop walking sound when player dies
+        if (this.game.audioManager) {
+            this.game.audioManager.stopWalkingSound();
+            this.game.audioManager.playDamageSound();
+        }
         
         // Show death screen
         if (this.game.uiManager) {
@@ -648,6 +920,80 @@ class Player {
         if (this.game.uiManager) {
             this.game.uiManager.hideDeathScreen();
             this.game.uiManager.updateHealth(this.health);
+        }
+    }
+    
+    triggerDeathAnimation() {
+        console.log(`Death animation triggered for player ${this.id}`);
+        
+        // Play OOF sound
+        if (this.game.audioManager) {
+            this.game.audioManager.playDamageSound();
+        }
+        
+        // Start death animation
+        this.deathAnimationPlaying = true;
+        this.deathStartTime = Date.now();
+        
+        // Set upward velocity (very fast flying upward)
+        this.deathVelocity = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 6, // Random horizontal velocity (-3 to 3)
+            550, // Much faster upward velocity
+            (Math.random() - 0.5) * 6  // Random horizontal velocity (-3 to 3)0
+        );
+        
+        // Set random rotation velocities for spinning effect
+        this.deathRotationVelocity = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 10, // Random X rotation
+            (Math.random() - 0.5) * 10, // Random Y rotation
+            (Math.random() - 0.5) * 10  // Random Z rotation
+        );
+        
+        // Make sure mesh is visible during death animation
+        if (this.mesh) {
+            this.mesh.setEnabled(true);
+        }
+        if (this.nameTag) {
+            this.nameTag.setEnabled(false); // Hide name tag during death
+        }
+    }
+    
+    updateDeathAnimation(deltaTime) {
+        const elapsedTime = Date.now() - this.deathStartTime;
+        
+        // Check if animation should end
+        if (elapsedTime >= this.deathDuration) {
+            this.deathAnimationPlaying = false;
+            
+            // Hide mesh after animation
+            if (this.mesh) {
+                this.mesh.setEnabled(false);
+            }
+            if (this.nameTag) {
+                this.nameTag.setEnabled(false);
+            }
+            return;
+        }
+        
+        // Apply gravity to death velocity
+        const gravity = -9.81 * 2; // Double gravity for more dramatic effect
+        this.deathVelocity.y += gravity * deltaTime;
+        
+        // Update position based on death velocity
+        this.position.x += this.deathVelocity.x * deltaTime;
+        this.position.y += this.deathVelocity.y * deltaTime;
+        this.position.z += this.deathVelocity.z * deltaTime;
+        
+        // Update rotation based on death rotation velocity
+        this.rotation.x += this.deathRotationVelocity.x * deltaTime;
+        this.rotation.y += this.deathRotationVelocity.y * deltaTime;
+        this.rotation.z += this.deathRotationVelocity.z * deltaTime;
+        
+        // Update mesh position and rotation
+        if (this.mesh) {
+            this.mesh.position = this.position;
+            // During death animation, allow full rotation (not just Y-axis)
+            this.mesh.rotation = this.rotation;
         }
     }
     
@@ -717,11 +1063,94 @@ class RemotePlayer {
         this.targetPosition = this.position.clone();
         this.targetRotation = this.rotation.clone();
         
+        // Character properties
+        this.characterConfig = window.RupolCharacterConfig || null;
+        this.characterMeshes = [];
+        this.characterContainer = null;
+        
+        // Death animation properties
+        this.deathAnimationPlaying = false;
+        this.deathVelocity = new BABYLON.Vector3(0, 0, 0);
+        this.deathRotationVelocity = new BABYLON.Vector3(0, 0, 0);
+        this.deathStartTime = 0;
+        this.deathDuration = 3000; // 3 seconds of flying
+        
         this.createMesh();
     }
     
-    createMesh() {
-        // Create a simple capsule to represent the player
+    async createMesh() {
+        try {
+            if (this.characterConfig) {
+                // Load rupol character model
+                const assetLoader = new AssetLoader(this.scene);
+                const result = await assetLoader.loadModel(
+                    `character_${this.id}`,
+                    this.characterConfig.model.folder,
+                    this.characterConfig.model.file
+                );
+                
+                if (result.meshes && result.meshes.length > 0) {
+                    // Create container for the character
+                    this.characterContainer = new BABYLON.TransformNode(`playerContainer_${this.id}`, this.scene);
+                    this.characterContainer.position = this.position;
+                    
+                    // Store character meshes
+                    this.characterMeshes = result.meshes;
+                    
+                    // Parent all meshes to the container
+                    this.characterMeshes.forEach((mesh, index) => {
+                        if (mesh) {
+                            mesh.parent = this.characterContainer;
+                            
+                            // Configure the mesh
+                            mesh.isPickable = true; // Allow bullet collision
+                            mesh.checkCollisions = false; // Don't interfere with player movement
+                            mesh.metadata = { 
+                                isPlayerMesh: true, 
+                                playerId: this.id,
+                                meshIndex: index 
+                            };
+                            
+                            console.log(`Character mesh ${index} for player ${this.id}: ${mesh.name}`);
+                        }
+                    });
+                    
+                    // Apply character configuration
+                    this.characterContainer.scaling = new BABYLON.Vector3(
+                        this.characterConfig.model.scale.x,
+                        this.characterConfig.model.scale.y,
+                        this.characterConfig.model.scale.z
+                    );
+                    
+                    this.characterContainer.rotation = new BABYLON.Vector3(
+                        this.characterConfig.model.rotation.x,
+                        this.characterConfig.model.rotation.y,
+                        this.characterConfig.model.rotation.z
+                    );
+                    
+                    // Set the main mesh reference for collision detection
+                    this.mesh = this.characterContainer;
+                    
+                    console.log(`Rupol character loaded for player ${this.id}`);
+                } else {
+                    console.warn(`No meshes found in character model for player ${this.id}, falling back to capsule`);
+                    this.createFallbackMesh();
+                }
+            } else {
+                console.warn(`No character config available, falling back to capsule for player ${this.id}`);
+                this.createFallbackMesh();
+            }
+        } catch (error) {
+            console.error(`Failed to load character model for player ${this.id}:`, error);
+            this.createFallbackMesh();
+        }
+        
+        // Add name tag
+        this.createNameTag();
+    }
+    
+    createFallbackMesh() {
+        // Create a simple capsule as fallback
         this.mesh = BABYLON.MeshBuilder.CreateCapsule(`player_${this.id}`, {
             radius: 0.5,
             height: 2
@@ -735,8 +1164,13 @@ class RemotePlayer {
         material.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
         this.mesh.material = material;
         
-        // Add name tag (optional)
-        this.createNameTag();
+        // Configure for collision
+        this.mesh.isPickable = true;
+        this.mesh.checkCollisions = false;
+        this.mesh.metadata = { 
+            isPlayerMesh: true, 
+            playerId: this.id 
+        };
     }
     
     createNameTag() {
@@ -746,7 +1180,16 @@ class RemotePlayer {
             height: 0.5
         }, this.scene);
         
-        nameTag.position = this.position.add(new BABYLON.Vector3(0, 2.5, 0));
+        // Use character config for name tag positioning if available
+        const nameTagOffset = this.characterConfig ? 
+            new BABYLON.Vector3(
+                this.characterConfig.nameTagOffset.x,
+                this.characterConfig.nameTagOffset.y,
+                this.characterConfig.nameTagOffset.z
+            ) : 
+            new BABYLON.Vector3(0, 2.5, 0);
+            
+        nameTag.position = this.position.add(nameTagOffset);
         nameTag.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
         
         // Name tag material with text (simplified)
@@ -755,25 +1198,50 @@ class RemotePlayer {
         material.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
         nameTag.material = material;
         
+        // Make name tag non-collidable
+        nameTag.isPickable = false;
+        nameTag.checkCollisions = false;
+        
         this.nameTag = nameTag;
     }
     
     update(deltaTime) {
+        // Handle death animation
+        if (this.deathAnimationPlaying) {
+            this.updateDeathAnimation(deltaTime);
+            return;
+        }
+        
         if (!this.alive) return;
         
         // Smooth interpolation to target position
         this.position = BABYLON.Vector3.Lerp(this.position, this.targetPosition, deltaTime * 10);
         this.rotation = BABYLON.Vector3.Lerp(this.rotation, this.targetRotation, deltaTime * 10);
         
-        // Update mesh position
+        // Update mesh position (character container or fallback mesh)
         if (this.mesh) {
             this.mesh.position = this.position;
-            this.mesh.rotation = this.rotation;
+            
+            // For character models, only rotate around Y-axis (horizontal rotation only)
+            if (this.characterConfig) {
+                this.mesh.rotation = new BABYLON.Vector3(0, this.rotation.y, 0);
+            } else {
+                // Fallback mesh can rotate normally
+                this.mesh.rotation = this.rotation;
+            }
         }
         
         // Update name tag position
         if (this.nameTag) {
-            this.nameTag.position = this.position.add(new BABYLON.Vector3(0, 2.5, 0));
+            const nameTagOffset = this.characterConfig ? 
+                new BABYLON.Vector3(
+                    this.characterConfig.nameTagOffset.x,
+                    this.characterConfig.nameTagOffset.y,
+                    this.characterConfig.nameTagOffset.z
+                ) : 
+                new BABYLON.Vector3(0, 2.5, 0);
+                
+            this.nameTag.position = this.position.add(nameTagOffset);
         }
     }
     
@@ -789,21 +1257,122 @@ class RemotePlayer {
             playerData.rotation.z
         );
         this.health = playerData.health;
+        
+        // Check if player just died
+        const wasAlive = this.alive;
+        const nowAlive = playerData.alive;
+        
         this.alive = playerData.alive;
         
-        // Update visibility based on alive state
+        // If player just died, trigger death animation
+        if (wasAlive && !nowAlive) {
+            this.triggerDeathAnimation();
+        }
+        
+        // Update visibility based on alive state (unless death animation is playing)
+        if (!this.deathAnimationPlaying) {
+            if (this.mesh) {
+                this.mesh.setEnabled(this.alive);
+            }
+            if (this.nameTag) {
+                this.nameTag.setEnabled(this.alive);
+            }
+        }
+    }
+    
+    triggerDeathAnimation() {
+        console.log(`Death animation triggered for remote player ${this.id}`);
+        
+        // Play OOF sound
+        if (this.game.audioManager) {
+            this.game.audioManager.playDamageSound();
+        }
+        
+        // Start death animation
+        this.deathAnimationPlaying = true;
+        this.deathStartTime = Date.now();
+        
+        // Set upward velocity (very fast flying upward)
+        this.deathVelocity = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 6, // Random horizontal velocity (-3 to 3)
+            550, // Much faster upward velocity
+            (Math.random() - 0.5) * 6  // Random horizontal velocity (-3 to 3)
+        );
+        
+        // Set random rotation velocities for spinning effect
+        this.deathRotationVelocity = new BABYLON.Vector3(
+            (Math.random() - 0.5) * 10, // Random X rotation
+            (Math.random() - 0.5) * 10, // Random Y rotation
+            (Math.random() - 0.5) * 10  // Random Z rotation
+        );
+        
+        // Make sure mesh is visible during death animation
         if (this.mesh) {
-            this.mesh.setEnabled(this.alive);
+            this.mesh.setEnabled(true);
         }
         if (this.nameTag) {
-            this.nameTag.setEnabled(this.alive);
+            this.nameTag.setEnabled(false); // Hide name tag during death
+        }
+    }
+    
+    updateDeathAnimation(deltaTime) {
+        const elapsedTime = Date.now() - this.deathStartTime;
+        
+        // Check if animation should end
+        if (elapsedTime >= this.deathDuration) {
+            this.deathAnimationPlaying = false;
+            
+            // Hide mesh after animation
+            if (this.mesh) {
+                this.mesh.setEnabled(false);
+            }
+            if (this.nameTag) {
+                this.nameTag.setEnabled(false);
+            }
+            return;
+        }
+        
+        // Apply gravity to death velocity
+        const gravity = -9.81 * 2; // Double gravity for more dramatic effect
+        this.deathVelocity.y += gravity * deltaTime;
+        
+        // Update position based on death velocity
+        this.position.x += this.deathVelocity.x * deltaTime;
+        this.position.y += this.deathVelocity.y * deltaTime;
+        this.position.z += this.deathVelocity.z * deltaTime;
+        
+        // Update rotation based on death rotation velocity
+        this.rotation.x += this.deathRotationVelocity.x * deltaTime;
+        this.rotation.y += this.deathRotationVelocity.y * deltaTime;
+        this.rotation.z += this.deathRotationVelocity.z * deltaTime;
+        
+        // Update mesh position and rotation
+        if (this.mesh) {
+            this.mesh.position = this.position;
+            // During death animation, allow full rotation (not just Y-axis)
+            this.mesh.rotation = this.rotation;
         }
     }
     
     dispose() {
-        if (this.mesh) {
+        // Clean up character meshes
+        if (this.characterMeshes) {
+            this.characterMeshes.forEach(mesh => {
+                if (mesh) mesh.dispose();
+            });
+        }
+        
+        // Clean up character container
+        if (this.characterContainer) {
+            this.characterContainer.dispose();
+        }
+        
+        // Clean up main mesh (fallback or container reference)
+        if (this.mesh && this.mesh !== this.characterContainer) {
             this.mesh.dispose();
         }
+        
+        // Clean up name tag
         if (this.nameTag) {
             this.nameTag.dispose();
         }

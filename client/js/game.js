@@ -20,6 +20,9 @@ class Game {
         // Performance
         this.lastUpdateTime = 0;
         this.fps = 60;
+        this.frameCount = 0;
+        this.fpsUpdateTime = 0;
+        this.displayFps = 60;
         
         // Initialize the game
         this.init();
@@ -106,7 +109,7 @@ class Game {
         this.camera.setTarget(BABYLON.Vector3.Zero());
         
         // Adjust clipping planes for FPS weapons - bring near plane much closer
-        this.camera.minZ = 0.01; // Very close near clipping plane
+        this.camera.minZ = 0.001; // Extremely close near clipping plane for weapon visibility
         this.camera.maxZ = 2000; // Increased for large maps
         
         // Set as active camera
@@ -256,10 +259,7 @@ class Game {
             // Area 8: Around coordinates (-597, -46, -409)
             new BABYLON.Vector3(-597, 37, -409),
             
-            // Area 9: Around coordinates (-669, -46, -1064)
-            new BABYLON.Vector3(-669, 40, -1064),
-            
-            // Area 10: Around coordinates (-92, -48, -628)
+            // Area 9: Around coordinates (-92, -48, -628)
             new BABYLON.Vector3(-92, 40, -628),
             
             // Area 11: Elevated position around (405, 20, -881)
@@ -342,15 +342,24 @@ class Game {
     }
     
     initGameSystems() {
+        // Initialize audio manager first for sound effects
+        this.audioManager = new AudioManager();
+        
         this.player = new Player(this);
         this.uiManager = new UIManager(this);
         
         // Setup input handling
         this.setupInputs();
+        
+        // Preload sounds for better performance
+        this.audioManager.preloadSounds();
     }
     
     setupInputs() {
-        // Pointer lock for FPS controls - handle both canvas and welcome overlay clicks
+        // Setup weapon selection dropdown
+        this.setupWeaponSelection();
+        
+        // Pointer lock for FPS controls - handle both canvas clicks
         const requestPointerLock = (event) => {
             if (!this.isPointerLocked && this.gameStarted) {
                 this.canvas.requestPointerLock();
@@ -361,11 +370,52 @@ class Game {
         };
         
         this.canvas.addEventListener('click', requestPointerLock);
+    }
+    
+    setupWeaponSelection() {
+        const weaponDropdown = document.getElementById('weaponDropdown');
+        const weaponDescription = document.getElementById('weaponDescription');
+        const startButton = document.getElementById('startButton');
         
-        // Also handle clicks on the welcome overlay
-        const clickToStart = document.getElementById('clickToStart');
-        if (clickToStart) {
-            clickToStart.addEventListener('click', requestPointerLock);
+        // Weapon configurations
+        const weaponConfigs = {
+            'bulldog': window.BulldogConfig,
+            'l118a1': window.L118A1Config
+        };
+        
+        // Update description when weapon changes
+        if (weaponDropdown && weaponDescription) {
+            weaponDropdown.addEventListener('change', (event) => {
+                const selectedWeapon = event.target.value;
+                const config = weaponConfigs[selectedWeapon];
+                if (config) {
+                    weaponDescription.textContent = config.description;
+                }
+                
+                // Update selected weapon for new players
+                this.selectedWeapon = selectedWeapon;
+                
+                // If player is already in game, switch weapon immediately
+                if (this.player && this.gameStarted) {
+                    this.player.switchWeapon(selectedWeapon);
+                }
+            });
+        }
+        
+        // Handle start button click
+        if (startButton) {
+            startButton.addEventListener('click', (event) => {
+                // Get selected weapon
+                const selectedWeapon = weaponDropdown ? weaponDropdown.value : 'bulldog';
+                this.selectedWeapon = selectedWeapon;
+                
+                // Start the game and request pointer lock
+                if (!this.isPointerLocked) {
+                    this.canvas.requestPointerLock();
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            });
         }
         
         // Handle pointer lock change events (different browsers use different event names)
@@ -395,7 +445,7 @@ class Game {
         document.addEventListener('mozpointerlockchange', handlePointerLockChange);
         document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
         
-        // ESC to release pointer lock, F1 to toggle debug mode
+        // ESC to release pointer lock, F1 to toggle debug mode, number keys for weapon switching
         document.addEventListener('keydown', (event) => {
             if (event.code === 'Escape' && this.isPointerLocked) {
                 document.exitPointerLock();
@@ -403,8 +453,40 @@ class Game {
                 this.debugMode = !this.debugMode;
                 console.log('Debug mode:', this.debugMode ? 'ON' : 'OFF');
                 event.preventDefault();
+            } else if (event.code === 'Digit1' && this.player && this.gameStarted) {
+                // Switch to Bulldog (weapon 1)
+                this.selectedWeapon = 'bulldog';
+                this.player.switchWeapon('bulldog');
+                this.updateWeaponDropdown('bulldog');
+                event.preventDefault();
+            } else if (event.code === 'Digit2' && this.player && this.gameStarted) {
+                // Switch to L118A1 Sniper (weapon 2)
+                this.selectedWeapon = 'l118a1';
+                this.player.switchWeapon('l118a1');
+                this.updateWeaponDropdown('l118a1');
+                event.preventDefault();
             }
         });
+    }
+    
+    updateWeaponDropdown(weaponType) {
+        const weaponDropdown = document.getElementById('weaponDropdown');
+        const weaponDescription = document.getElementById('weaponDescription');
+        
+        if (weaponDropdown) {
+            weaponDropdown.value = weaponType;
+        }
+        
+        if (weaponDescription) {
+            const weaponConfigs = {
+                'bulldog': window.BulldogConfig,
+                'l118a1': window.L118A1Config
+            };
+            const config = weaponConfigs[weaponType];
+            if (config) {
+                weaponDescription.textContent = config.description;
+            }
+        }
     }
     
     async initNetwork() {
@@ -442,6 +524,30 @@ class Game {
         
         // Cap deltaTime to prevent huge jumps
         deltaTime = Math.min(deltaTime, 1/30); // Max 30fps minimum
+        
+        // Update FPS counter (always run, regardless of game state)
+        this.frameCount++;
+        this.fpsUpdateTime += deltaTime;
+        if (this.fpsUpdateTime >= 1.0) { // Update FPS display every second
+            this.displayFps = Math.round(this.frameCount / this.fpsUpdateTime);
+            this.frameCount = 0;
+            this.fpsUpdateTime = 0;
+            
+            // Update FPS display in UI
+            const fpsElement = document.getElementById('fpsCounter');
+            if (fpsElement) {
+                fpsElement.textContent = `FPS: ${this.displayFps}`;
+                
+                // Color code FPS: Green >50, Yellow 30-50, Red <30
+                if (this.displayFps >= 50) {
+                    fpsElement.style.color = '#00ff00';
+                } else if (this.displayFps >= 30) {
+                    fpsElement.style.color = '#ffff00';
+                } else {
+                    fpsElement.style.color = '#ff0000';
+                }
+            }
+        }
         
         if (!this.gameStarted) return;
         
@@ -491,8 +597,11 @@ class Game {
     
     // Method to create physics projectile
     createProjectile(origin, direction, shooterId) {
-        // Get weapon config - default to bulldog if not available
-        const weaponConfig = window.BulldogConfig;
+        // Get weapon config from player or default to bulldog
+        let weaponConfig = window.BulldogConfig;
+        if (this.player && this.player.currentWeaponConfig) {
+            weaponConfig = this.player.currentWeaponConfig;
+        }
         const projectileConfig = weaponConfig.projectile;
         
         const bullet = {
@@ -535,20 +644,56 @@ class Game {
         const distance = BABYLON.Vector3.Distance(previousPosition, bullet.mesh.position);
         const ray = new BABYLON.Ray(previousPosition, direction, distance);
         
-        // Check collision with scene objects
+        // Check collision with scene objects and player character meshes
         const hit = this.scene.pickWithRay(ray, (mesh) => {
-            // Filter out bullets, UI elements, weapon meshes, hit effects, safety floors, and the shooter
-            return mesh.name !== 'bullet' && 
-                   mesh.name !== 'hitEffect' &&
-                   mesh.name !== 'invisibleFloor' &&
-                   !mesh.name.startsWith('ui_') && 
-                   mesh.isPickable !== false &&
-                   (!mesh.metadata || (!mesh.metadata.isWeapon && !mesh.metadata.isBullet && !mesh.metadata.isHitEffect && !mesh.metadata.isSafetyFloor));
+            // Filter out bullets, UI elements, weapon meshes, hit effects, safety floors
+            if (mesh.name === 'bullet' || 
+                mesh.name === 'hitEffect' ||
+                mesh.name === 'invisibleFloor' ||
+                mesh.name.startsWith('ui_') || 
+                mesh.isPickable === false) {
+                return false;
+            }
+            
+            // Filter out shooter's own character meshes
+            if (mesh.metadata && mesh.metadata.isPlayerMesh && mesh.metadata.playerId === bullet.shooterId) {
+                return false;
+            }
+            
+            // Filter out weapon/bullet/hit effect metadata
+            if (mesh.metadata && (mesh.metadata.isWeapon || mesh.metadata.isBullet || mesh.metadata.isHitEffect || mesh.metadata.isSafetyFloor)) {
+                return false;
+            }
+            
+            return true;
         });
         
         if (hit.hit) {
-            this.handleBulletHit(bullet, hit, bulletIndex);
-            return;
+            // Check if hit mesh is a player character mesh
+            if (hit.pickedMesh && hit.pickedMesh.metadata && hit.pickedMesh.metadata.isPlayerMesh) {
+                const hitPlayerId = hit.pickedMesh.metadata.playerId;
+                
+                // Don't hit self
+                if (hitPlayerId === bullet.shooterId) {
+                    return;
+                }
+                
+                // Check if it's the local player
+                if (hitPlayerId === (this.networkManager?.playerId || 'local')) {
+                    this.handleLocalPlayerHit(bullet, bulletIndex);
+                } else {
+                    // It's a remote player
+                    const remotePlayer = this.remotePlayers.get(hitPlayerId);
+                    if (remotePlayer && remotePlayer.alive) {
+                        this.handlePlayerHit(bullet, remotePlayer, hitPlayerId, bulletIndex);
+                    }
+                }
+                return;
+            } else {
+                // It's an environment hit
+                this.handleBulletHit(bullet, hit, bulletIndex);
+                return;
+            }
         }
         
         // Check collision with remote players
@@ -595,6 +740,11 @@ class Game {
         // Create hit effect at player position
         this.createHitEffect(remotePlayer.position);
         
+        // Play damage sound effect
+        if (this.audioManager) {
+            this.audioManager.playDamageSound();
+        }
+        
         // Send damage to server (server will validate)
         if (this.networkManager) {
             this.networkManager.socket.emit('bulletHit', {
@@ -618,7 +768,7 @@ class Game {
         // Create hit effect
         this.createHitEffect(this.player.position);
         
-        // Apply damage locally and send to server
+        // Apply damage locally and send to server (takeDamage already plays sound)
         this.player.takeDamage(bullet.damage);
         
         if (this.networkManager) {

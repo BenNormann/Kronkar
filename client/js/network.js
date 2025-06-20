@@ -130,6 +130,18 @@ class NetworkManager {
                 this.game.player.die();
             } else {
                 console.log('Player killed:', data.victimId, 'by', data.killerId);
+                
+                // Update remote player's alive state to trigger death animation
+                const remotePlayer = this.game.remotePlayers.get(data.victimId);
+                if (remotePlayer) {
+                    remotePlayer.updateFromServer({
+                        position: remotePlayer.targetPosition,
+                        rotation: remotePlayer.targetRotation,
+                        health: 0,
+                        alive: false
+                    });
+                }
+                
                 // Could show kill feed here
             }
         });
