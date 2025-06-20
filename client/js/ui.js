@@ -11,6 +11,11 @@ class UIManager {
         this.playerCount = document.getElementById('playerCount');
         this.connectionStatus = document.getElementById('connectionStatus');
         
+        // Leaderboard elements
+        this.leaderboard = document.getElementById('leaderboard');
+        this.leaderboardBody = document.getElementById('leaderboardBody');
+        this.isLeaderboardOpen = false;
+        
         // Death screen state
         this.isDead = false;
         this.respawnCountdown = 0;
@@ -27,10 +32,16 @@ class UIManager {
             });
         }
         
-        // Keyboard shortcut for respawn (R key)
+        // Keyboard shortcuts
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyR' && this.isDead) {
                 this.requestRespawn();
+                event.preventDefault();
+            }
+            
+            // Tab key for leaderboard
+            if (event.code === 'Tab' && !this.isDead) {
+                this.toggleLeaderboard();
                 event.preventDefault();
             }
         });
@@ -269,6 +280,97 @@ class UIManager {
     }
     
     // Add CSS animations dynamically
+    // Leaderboard methods
+    toggleLeaderboard() {
+        if (!this.leaderboard) return;
+        
+        this.isLeaderboardOpen = !this.isLeaderboardOpen;
+        this.leaderboard.style.display = this.isLeaderboardOpen ? 'block' : 'none';
+        
+        if (this.isLeaderboardOpen) {
+            this.updateLeaderboard();
+        }
+    }
+    
+    updateLeaderboard() {
+        if (!this.leaderboardBody || !this.game) return;
+        
+        // Get all players with scores
+        const players = [];
+        
+        // Add local player
+        if (this.game.player && this.game.networkManager) {
+            players.push({
+                id: this.game.networkManager.playerId,
+                name: `Player ${this.game.networkManager.playerId.slice(-4)}`,
+                score: this.game.player.score || 0,
+                alive: this.game.player.alive
+            });
+        }
+        
+        // Add remote players
+        this.game.remotePlayers.forEach((remotePlayer, playerId) => {
+            players.push({
+                id: playerId,
+                name: `Player ${playerId.slice(-4)}`,
+                score: remotePlayer.score || 0,
+                alive: remotePlayer.alive
+            });
+        });
+        
+        // Sort by score (descending)
+        players.sort((a, b) => b.score - a.score);
+        
+        // Clear current leaderboard
+        this.leaderboardBody.innerHTML = '';
+        
+        // Add players to leaderboard
+        players.forEach((player, index) => {
+            const row = document.createElement('tr');
+            
+            const rank = index + 1;
+            const isCurrentPlayer = player.id === (this.game.networkManager ? this.game.networkManager.playerId : null);
+            
+            if (isCurrentPlayer) {
+                row.style.background = 'rgba(0, 122, 204, 0.3)';
+            }
+            
+            row.innerHTML = `
+                <td class="leaderboard-rank">${rank}</td>
+                <td class="leaderboard-player">${player.name}${isCurrentPlayer ? ' (You)' : ''}</td>
+                <td class="leaderboard-score">${player.score}</td>
+                <td class="leaderboard-status">
+                    <span class="${player.alive ? 'status-alive' : 'status-dead'}">
+                        ${player.alive ? 'Alive' : 'Dead'}
+                    </span>
+                </td>
+            `;
+            
+            this.leaderboardBody.appendChild(row);
+        });
+        
+        // If no players, show message
+        if (players.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4" style="text-align: center; color: #ccc;">No players in game</td>';
+            this.leaderboardBody.appendChild(row);
+        }
+    }
+    
+    // Method to update player score (called when kills happen)
+    updatePlayerScore(playerId, newScore) {
+        // Update remote player score
+        const remotePlayer = this.game.remotePlayers.get(playerId);
+        if (remotePlayer) {
+            remotePlayer.score = newScore;
+        }
+        
+        // Update leaderboard if it's open
+        if (this.isLeaderboardOpen) {
+            this.updateLeaderboard();
+        }
+    }
+
     addAnimations() {
         const style = document.createElement('style');
         style.textContent = `

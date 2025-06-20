@@ -10,6 +10,7 @@ class Player {
         this.velocity = new BABYLON.Vector3(0, 0, 0);
         this.health = 100;
         this.alive = true;
+        this.score = 0; // Kill score tracking
         
         // Player height offset for proper human scale
         this.eyeHeight = 16; // Camera height above player position for proper human scale (doubled)
@@ -1116,6 +1117,7 @@ class RemotePlayer {
         );
         this.health = playerData.health;
         this.alive = playerData.alive;
+        this.score = playerData.score || 0; // Kill score tracking
         
         // Interpolation
         this.targetPosition = this.position.clone();
@@ -1315,6 +1317,11 @@ class RemotePlayer {
             playerData.rotation.z
         );
         this.health = playerData.health;
+        
+        // Update score if provided
+        if (playerData.score !== undefined) {
+            this.score = playerData.score;
+        }
         
         // Check if player just died
         const wasAlive = this.alive;

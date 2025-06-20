@@ -199,6 +199,99 @@
             font-size: 14px;
         }
 
+        /* Leaderboard Styles */
+        #leaderboard {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #007acc;
+            border-radius: 10px;
+            padding: 20px;
+            min-width: 400px;
+            max-width: 600px;
+            max-height: 70vh;
+            overflow-y: auto;
+            z-index: 2500;
+            display: none;
+            pointer-events: all;
+        }
+
+        #leaderboard h2 {
+            text-align: center;
+            color: #007acc;
+            margin-bottom: 20px;
+            font-size: 24px;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 10px;
+        }
+
+        #leaderboardTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #leaderboardTable th {
+            background: rgba(0, 122, 204, 0.3);
+            color: #fff;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #007acc;
+            font-weight: bold;
+        }
+
+        #leaderboardTable td {
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        #leaderboardTable tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        #leaderboardTable tr:hover {
+            background: rgba(0, 122, 204, 0.2);
+        }
+
+        .leaderboard-rank {
+            font-weight: bold;
+            text-align: center;
+            width: 50px;
+        }
+
+        .leaderboard-player {
+            font-weight: bold;
+        }
+
+        .leaderboard-score {
+            text-align: center;
+            font-weight: bold;
+            color: #00ff00;
+            width: 80px;
+        }
+
+        .leaderboard-status {
+            text-align: center;
+            width: 80px;
+        }
+
+        .status-alive {
+            color: #00ff00;
+        }
+
+        .status-dead {
+            color: #ff6666;
+        }
+
+        #leaderboardFooter {
+            text-align: center;
+            margin-top: 15px;
+            color: #ccc;
+            font-size: 12px;
+        }
+
         #instructions ul {
             list-style: none;
         }
@@ -327,10 +420,32 @@
                 <li>Space - Jump</li>
                 <li>Shift - Sprint</li>
                 <li>Left Click - Shoot</li>
+                <li>Tab - Leaderboard</li>
                 <li>1 - Bulldog Rifle</li>
                 <li>2 - L118A1 Sniper</li>
                 <li>ESC - Release mouse</li>
             </ul>
+        </div>
+        
+        <!-- Leaderboard -->
+        <div id="leaderboard">
+            <h2>🏆 Leaderboard</h2>
+            <table id="leaderboardTable">
+                <thead>
+                    <tr>
+                        <th class="leaderboard-rank">#</th>
+                        <th class="leaderboard-player">Player</th>
+                        <th class="leaderboard-score">Kills</th>
+                        <th class="leaderboard-status">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <!-- Dynamic content will be inserted here -->
+                </tbody>
+            </table>
+            <div id="leaderboardFooter">
+                Press Tab to close | Score: 1 point per kill
+            </div>
         </div>
         
         <div id="deathScreen">

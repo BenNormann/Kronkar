@@ -61,6 +61,7 @@ io.on('connection', (socket) => {
     rotation: { x: 0, y: 0, z: 0 },
     health: gameConfig.maxHealth,
     alive: true,
+    score: 0, // Initialize kill score
     lastUpdate: Date.now()
   };
   
@@ -131,13 +132,17 @@ io.on('connection', (socket) => {
       target.health = 0;
       target.alive = false;
       
+      // Increment killer's score
+      shooter.score = (shooter.score || 0) + 1;
+      
       // Notify all players about the kill
       io.emit('playerKilled', {
         killerId: shooterId,
-        victimId: targetPlayerId
+        victimId: targetPlayerId,
+        killerScore: shooter.score
       });
       
-      console.log(`Player ${targetPlayerId} killed by ${shooterId}`);
+      console.log(`Player ${targetPlayerId} killed by ${shooterId}. Killer score: ${shooter.score}`);
       
       // Schedule respawn
       setTimeout(() => {

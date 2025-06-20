@@ -124,7 +124,7 @@ class NetworkManager {
         });
         
         // Player killed
-        this.socket.on('playerKilled', (data) => {
+        this.socket.on('playerKilled', (data) => {            
             if (data.victimId === this.playerId) {
                 console.log('You were killed by:', data.killerId);
                 this.game.player.die();
@@ -138,11 +138,30 @@ class NetworkManager {
                         position: remotePlayer.targetPosition,
                         rotation: remotePlayer.targetRotation,
                         health: 0,
-                        alive: false
+                        alive: false,
+                        score: remotePlayer.score
                     });
                 }
-                
-                // Could show kill feed here
+            }
+            
+            // Handle kill scoring
+            if (data.killerId === this.playerId) {
+                // Local player got a kill - use server-provided score for consistency
+                this.game.player.score = data.killerScore || this.game.player.score + 1;
+                console.log('Your score is now:', this.game.player.score);
+            } else {
+                // Remote player got a kill, update their score with server data
+                const killerPlayer = this.game.remotePlayers.get(data.killerId);
+                if (killerPlayer) {
+                    killerPlayer.score = data.killerScore || (killerPlayer.score || 0) + 1;
+                }
+            }
+            
+            // Show kill feed
+            if (this.game.uiManager) {
+                const killerName = data.killerId === this.playerId ? 'You' : `Player ${data.killerId.slice(-4)}`;
+                const victimName = data.victimId === this.playerId ? 'You' : `Player ${data.victimId.slice(-4)}`;
+                this.game.uiManager.showKillFeed(killerName, victimName);
             }
         });
         
