@@ -278,22 +278,37 @@ class AudioManager {
             'assets/sounds/steps/step5.mp3'
         ];
         
+        // Pre-cache audio pool for better performance
+        if (!this.stepAudioPool) {
+            this.stepAudioPool = [];
+            this.stepAudioIndex = 0;
+        }
+        
         const playRandomStep = async () => {
             const randomStep = stepSounds[Math.floor(Math.random() * stepSounds.length)];
             
             try {
                 let audio;
-                if (this.soundCache.has(randomStep)) {
-                    audio = this.soundCache.get(randomStep).cloneNode();
-                } else {
+                
+                // Use audio pool for better performance instead of cloning
+                if (this.stepAudioPool.length < 5) {
+                    // Create new audio if pool not full
                     audio = new Audio(randomStep);
                     audio.preload = 'auto';
-                    this.soundCache.set(randomStep, audio.cloneNode());
+                    this.stepAudioPool.push(audio);
+                } else {
+                    // Reuse from pool
+                    audio = this.stepAudioPool[this.stepAudioIndex % this.stepAudioPool.length];
+                    this.stepAudioIndex++;
+                    
+                    // Reset audio for reuse
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.src = randomStep;
                 }
                 
                 audio.volume = Math.min(1.0, Math.max(0.0, 0.4 * this.masterVolume));
                 audio.playbackRate = isSprinting ? 1.4 : 1.0;
-                audio.addEventListener('ended', () => audio.remove());
                 
                 await audio.play().catch(error => {
                     console.warn('Could not play local step sound:', error);

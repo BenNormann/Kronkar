@@ -49,6 +49,11 @@ class Player {
         this.weaponRestRotation = null; // Store the weapon's rest rotation
         this.currentWeaponConfig = null; // Current weapon configuration
         
+        // Performance optimizations
+        this.cachedWeaponMatrix = null; // Cache weapon matrix for better performance
+        this.weaponMatrixNeedsUpdate = true; // Flag to update cached matrix
+        this.lastCollisionCheckTime = 0; // Throttle collision checks for performance
+        
         // Input state
         this.keys = {
             forward: false,
@@ -415,61 +420,69 @@ class Player {
             const horizontalDir = horizontalMove.normalize();
             let canMoveHorizontally = true;
             
-            // For high-speed movement (sprinting), use multiple collision checks along the path
-            const isHighSpeed = horizontalDistance > 3.0; // Detect sprinting or fast movement
-            const checkSteps = isHighSpeed ? 3 : 1; // More checks for high speed
-            const safetyDistance = isHighSpeed ? 4.0 : 2.5; // Larger safety margin for high speed
+            // Throttle collision checks for better performance - especially during sprinting
+            const now = performance.now();
+            const shouldSkipDetailedCheck = (now - this.lastCollisionCheckTime) < 16 && horizontalDistance < 5.0; // Skip if less than 16ms and not super fast
             
-            for (let step = 0; step < checkSteps && canMoveHorizontally; step++) {
-                const stepRatio = (step + 1) / checkSteps;
-                const checkPosition = this.position.add(horizontalMove.scale(stepRatio));
+            if (!shouldSkipDetailedCheck) {
+                this.lastCollisionCheckTime = now;
                 
-                // Cast rays at different heights to check for wall collision
-                const rayHeights = [1, 3, 5, 7, 9]; // More height checks including head level
-                for (let height of rayHeights) {
-                    const rayOrigin = checkPosition.add(new BABYLON.Vector3(0, height, 0));
-                    const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
-                    const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
-                        return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                               !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                    });
+                // For high-speed movement (sprinting), use multiple collision checks along the path
+                const isHighSpeed = horizontalDistance > 3.0; // Detect sprinting or fast movement
+                const checkSteps = isHighSpeed ? 2 : 1; // Reduced from 3 to 2 checks for high speed
+                const safetyDistance = isHighSpeed ? 3.0 : 2.5; // Reduced safety margin for better performance
+                
+                for (let step = 0; step < checkSteps && canMoveHorizontally; step++) {
+                    const stepRatio = (step + 1) / checkSteps;
+                    const checkPosition = this.position.add(horizontalMove.scale(stepRatio));
                     
-                    // If we would hit a wall within safety distance
-                    if (wallHit.hit && wallHit.distance < safetyDistance) {
-                        canMoveHorizontally = false;
-                        break;
-                    }
-                    
-                    // Also check for collision in a wider arc for sprinting
-                    if (isHighSpeed) {
-                        const sideAngles = [-0.3, 0.3]; // Check slightly left and right
-                        for (let angle of sideAngles) {
-                            const sideDir = new BABYLON.Vector3(
-                                horizontalDir.x * Math.cos(angle) - horizontalDir.z * Math.sin(angle),
-                                0,
-                                horizontalDir.x * Math.sin(angle) + horizontalDir.z * Math.cos(angle)
-                            );
-                            const sideRay = new BABYLON.Ray(rayOrigin, sideDir);
-                            const sideHit = this.scene.pickWithRay(sideRay, (mesh) => {
-                                return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
-                                       !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-                            });
-                            
-                            if (sideHit.hit && sideHit.distance < safetyDistance * 0.8) {
-                                canMoveHorizontally = false;
-                                break;
-                            }
+                    // Cast rays at different heights to check for wall collision - reduced ray count
+                    const rayHeights = isHighSpeed ? [1, 5, 9] : [1, 3, 5]; // Fewer rays for better performance
+                    for (let height of rayHeights) {
+                        const rayOrigin = checkPosition.add(new BABYLON.Vector3(0, height, 0));
+                        const horizontalRay = new BABYLON.Ray(rayOrigin, horizontalDir);
+                        const wallHit = this.scene.pickWithRay(horizontalRay, (mesh) => {
+                            return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                                   !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                        });
+                        
+                        // If we would hit a wall within safety distance
+                        if (wallHit.hit && wallHit.distance < safetyDistance) {
+                            canMoveHorizontally = false;
+                            break;
                         }
-                        if (!canMoveHorizontally) break;
+                        
+                        // Reduced side collision checks for sprinting - only check if really needed
+                        if (isHighSpeed && step === checkSteps - 1) { // Only check on final step
+                            const sideAngles = [-0.2, 0.2]; // Reduced angle and only 2 checks
+                            for (let angle of sideAngles) {
+                                const sideDir = new BABYLON.Vector3(
+                                    horizontalDir.x * Math.cos(angle) - horizontalDir.z * Math.sin(angle),
+                                    0,
+                                    horizontalDir.x * Math.sin(angle) + horizontalDir.z * Math.cos(angle)
+                                );
+                                const sideRay = new BABYLON.Ray(rayOrigin, sideDir);
+                                const sideHit = this.scene.pickWithRay(sideRay, (mesh) => {
+                                    return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
+                                           !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
+                                });
+                                
+                                if (sideHit.hit && sideHit.distance < safetyDistance * 0.7) { // Reduced multiplier
+                                    canMoveHorizontally = false;
+                                    break;
+                                }
+                            }
+                            if (!canMoveHorizontally) break;
+                        }
                     }
+                    if (!canMoveHorizontally) break;
                 }
-                if (!canMoveHorizontally) break;
-            }
-            
-            // Apply horizontal movement if not blocked
-            if (canMoveHorizontally) {
-                newPosition.x = this.position.x + moveDistance.x;
-                newPosition.z = this.position.z + moveDistance.z;
+                
+                // Apply horizontal movement if not blocked
+                if (canMoveHorizontally) {
+                    newPosition.x = this.position.x + moveDistance.x;
+                    newPosition.z = this.position.z + moveDistance.z;
+                }
             }
         }
         
@@ -502,6 +515,9 @@ class Player {
         this.position = newPosition;
         this.camera.position = this.position.clone();
         this.camera.position.y += this.eyeHeight; // Maintain proper eye height
+        
+        // Invalidate weapon matrix cache when camera moves
+        this.weaponMatrixNeedsUpdate = true;
         
         // Update rotation for networking
         this.rotation.x = this.camera.rotation.x;
@@ -629,9 +645,14 @@ class Player {
             config.offset.z   // Forward/back offset
         );
         
-        // Transform the barrel offset by the weapon's world matrix
-        const weaponMatrix = this.weapon.getWorldMatrix();
-        const barrelWorldPosition = BABYLON.Vector3.TransformCoordinates(barrelOffset, weaponMatrix);
+        // Cache weapon matrix calculation for better performance
+        if (!this.cachedWeaponMatrix || this.weaponMatrixNeedsUpdate) {
+            this.cachedWeaponMatrix = this.weapon.getWorldMatrix();
+            this.weaponMatrixNeedsUpdate = false;
+        }
+        
+        // Transform the barrel offset by the cached weapon matrix
+        const barrelWorldPosition = BABYLON.Vector3.TransformCoordinates(barrelOffset, this.cachedWeaponMatrix);
         
         // Get camera direction for aiming (where the player is looking)
         let aimDirection = this.camera.getDirection(BABYLON.Vector3.Forward());
@@ -708,160 +729,42 @@ class Player {
     }
     
     createBarrelDebugIndicator(position) {
-        // Check if this is a sniper rifle for enhanced muzzle flash
-        const isSniper = this.currentWeaponConfig && this.currentWeaponConfig.type === 'sniper_rifle';
-        
-        if (isSniper) {
-            this.createSniperMuzzleFlash(position);
-        } else {
-            this.createStandardMuzzleFlash(position);
-        }
+        // Use simple, lightweight muzzle flash instead of complex geometry
+        this.createOptimizedMuzzleFlash(position);
     }
     
-    createSniperMuzzleFlash(position) {
-        // Create dramatic sniper muzzle flash with multiple elements
-        const muzzleFlashGroup = new BABYLON.TransformNode('sniperMuzzleFlash', this.scene);
+    createOptimizedMuzzleFlash(position) {
+        // Create a simple, reusable muzzle flash that's performance-friendly
+        let muzzleFlash;
         
-        // Main bright flash (larger and brighter than standard)
-        const mainFlash = BABYLON.MeshBuilder.CreateSphere('mainFlash', {
-            diameter: 1.8 // Much larger for sniper
-        }, this.scene);
-        mainFlash.parent = muzzleFlashGroup;
-        
-        // Secondary expanding ring flash
-        const ringFlash = BABYLON.MeshBuilder.CreateTorus('ringFlash', {
-            diameter: 2.2,
-            thickness: 0.3
-        }, this.scene);
-        ringFlash.parent = muzzleFlashGroup;
-        
-        // Forward blast cone
-        const blastCone = BABYLON.MeshBuilder.CreateCylinder('blastCone', {
-            height: 1.5,
-            diameterTop: 1.2,
-            diameterBottom: 0.3
-        }, this.scene);
-        blastCone.parent = muzzleFlashGroup;
-        blastCone.position.z = 0.75; // Forward from center
-        blastCone.rotation.x = Math.PI / 2; // Point forward
-        
-        // Position relative to weapon so it moves with the weapon
-        if (this.weapon && this.currentWeaponConfig) {
-            muzzleFlashGroup.parent = this.weapon;
-            const config = this.currentWeaponConfig.barrel;
+        // Try to reuse existing muzzle flash if available
+        const existingFlash = this.scene.getMeshByName('muzzleFlash');
+        if (existingFlash && !existingFlash.isDisposed()) {
+            muzzleFlash = existingFlash;
+            muzzleFlash.setEnabled(true);
+        } else {
+            // Create simple sphere for muzzle flash
+            muzzleFlash = BABYLON.MeshBuilder.CreateSphere('muzzleFlash', {
+                diameter: this.currentWeaponConfig?.type === 'sniper_rifle' ? 1.2 : 0.8
+            }, this.scene);
             
-            // Use the same method as standard weapons - convert world position to local weapon space
-            const weaponMatrix = this.weapon.getWorldMatrix();
-            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
-            
-            // For sniper, adjust the local position to move flash to the right side
-            if (this.currentWeaponConfig.type === 'sniper_rifle') {
-                // Add offset to move flash forward and to the right from player's perspective
-                localPosition.x += 2; // Move forward
-                localPosition.z -= 1.3; // Move to right
+            // Simple emissive material
+            const material = new BABYLON.StandardMaterial('muzzleFlashMat', this.scene);
+            material.emissiveColor = new BABYLON.Color3(1, 0.8, 0.3); // Orange flash
+            material.disableLighting = true;
+            muzzleFlash.material = material;
+            muzzleFlash.isPickable = false;
+        }
+        
+        // Position the flash
+        muzzleFlash.position = position.clone();
+        
+        // Auto-hide after short duration
+        setTimeout(() => {
+            if (muzzleFlash && !muzzleFlash.isDisposed()) {
+                muzzleFlash.setEnabled(false);
             }
-            
-            muzzleFlashGroup.position = localPosition;
-        } else {
-            // Fallback to world position if no weapon
-            muzzleFlashGroup.position = position;
-        }
-        
-        // Create materials for each element
-        const mainMaterial = new BABYLON.StandardMaterial('sniperMainFlash', this.scene);
-        mainMaterial.emissiveColor = new BABYLON.Color3(1, 0.9, 0.6); // Bright white-yellow
-        mainMaterial.diffuseColor = new BABYLON.Color3(1, 0.8, 0.3);
-        mainMaterial.emissiveIntensity = 3.5; // Very bright
-        mainFlash.material = mainMaterial;
-        
-        const ringMaterial = new BABYLON.StandardMaterial('sniperRingFlash', this.scene);
-        ringMaterial.emissiveColor = new BABYLON.Color3(1, 0.6, 0.2); // Orange ring
-        ringMaterial.diffuseColor = new BABYLON.Color3(1, 0.5, 0.1);
-        ringMaterial.emissiveIntensity = 2.5;
-        ringFlash.material = ringMaterial;
-        
-        const coneMaterial = new BABYLON.StandardMaterial('sniperConeFlash', this.scene);
-        coneMaterial.emissiveColor = new BABYLON.Color3(1, 0.7, 0.3); // Yellow-orange blast
-        coneMaterial.diffuseColor = new BABYLON.Color3(1, 0.6, 0.2);
-        coneMaterial.emissiveIntensity = 2.0;
-        coneMaterial.alpha = 0.8; // Semi-transparent
-        blastCone.material = coneMaterial;
-        
-        // Make all elements non-collidable
-        [mainFlash, ringFlash, blastCone].forEach(mesh => {
-            mesh.isPickable = false;
-            mesh.checkCollisions = false;
-        });
-        
-        // Animate the muzzle flash for more dramatic effect
-        const expandAnimation = new BABYLON.Animation(
-            'muzzleFlashExpand',
-            'scaling',
-            60,
-            BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
-            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
-        );
-        
-        const expandKeys = [
-            { frame: 0, value: new BABYLON.Vector3(0.1, 0.1, 0.1) },
-            { frame: 3, value: new BABYLON.Vector3(1.2, 1.2, 1.2) },
-            { frame: 12, value: new BABYLON.Vector3(0.3, 0.3, 0.3) }
-        ];
-        expandAnimation.setKeys(expandKeys);
-        
-        // Apply animation to main flash
-        this.scene.beginDirectAnimation(mainFlash, [expandAnimation], 0, 12, false);
-        
-        // Ring flash animation (delayed and different pattern)
-        const ringExpandAnimation = expandAnimation.clone();
-        ringExpandAnimation.name = 'ringFlashExpand';
-        const ringExpandKeys = [
-            { frame: 0, value: new BABYLON.Vector3(0.2, 0.2, 0.2) },
-            { frame: 5, value: new BABYLON.Vector3(1.5, 1.5, 1.5) },
-            { frame: 15, value: new BABYLON.Vector3(0.1, 0.1, 0.1) }
-        ];
-        ringExpandAnimation.setKeys(ringExpandKeys);
-        this.scene.beginDirectAnimation(ringFlash, [ringExpandAnimation], 0, 15, false);
-        
-        // Longer duration for sniper muzzle flash (150ms)
-        setTimeout(() => {
-            muzzleFlashGroup.dispose();
-        }, 150);
-    }
-    
-    createStandardMuzzleFlash(position) {
-        // Create standard muzzle flash for other weapons
-        const muzzleFlash = BABYLON.MeshBuilder.CreateSphere('muzzleFlash', {
-            diameter: 0.8
-        }, this.scene);
-        
-        // Position relative to weapon so it moves with the weapon
-        if (this.weapon && this.currentWeaponConfig) {
-            // Parent to weapon but use the calculated world position converted to local space
-            muzzleFlash.parent = this.weapon;
-            
-            // Convert world position to local weapon space
-            const weaponMatrix = this.weapon.getWorldMatrix();
-            const localPosition = BABYLON.Vector3.TransformCoordinates(position, weaponMatrix.invert());
-            muzzleFlash.position = localPosition;
-        } else {
-            // Fallback to world position if no weapon
-            muzzleFlash.position = position;
-        }
-        
-        muzzleFlash.material = new BABYLON.StandardMaterial('muzzleFlashMat', this.scene);
-        muzzleFlash.material.emissiveColor = new BABYLON.Color3(1, 0.6, 0);
-        muzzleFlash.material.diffuseColor = new BABYLON.Color3(1, 0.8, 0.2);
-        muzzleFlash.material.specularColor = new BABYLON.Color3(1, 1, 0.5);
-        muzzleFlash.material.emissiveIntensity = 2.0;
-        
-        muzzleFlash.isPickable = false;
-        muzzleFlash.checkCollisions = false;
-        
-        // Standard duration (50ms)
-        setTimeout(() => {
-            muzzleFlash.dispose();
-        }, 50);
+        }, 50); // Very brief flash
     }
     
     addWeaponRecoil() {
