@@ -29,13 +29,25 @@ const gameConfig = {
   }
 };
 
+// Dust2 spawn points matching client-side coordinates
+const dust2SpawnPoints = [
+  { x: 421, y: 40, z: -599 },
+  { x: 442, y: 40, z: -630 },
+  { x: 371, y: 40, z: -836 },
+  { x: 198, y: 40, z: -323 },
+  { x: 62, y: 40, z: 138 },
+  { x: -529, y: 40, z: -40 },
+  { x: -582, y: 40, z: -569 },
+  { x: -597, y: 30, z: -409 },
+  { x: -669, y: 40, z: -1064 },
+  { x: -92, y: 40, z: -628 },
+  { x: 405, y: 40, z: -881 }
+];
+
 // Helper function to generate spawn position
 function getSpawnPosition() {
-  return {
-    x: (Math.random() - 0.5) * 20, // -10 to 10
-    y: 2,
-    z: (Math.random() - 0.5) * 20  // -10 to 10
-  };
+  const randomIndex = Math.floor(Math.random() * dust2SpawnPoints.length);
+  return dust2SpawnPoints[randomIndex];
 }
 
 // Socket.IO connection handling
@@ -86,15 +98,59 @@ io.on('connection', (socket) => {
   socket.on('playerShoot', (data) => {
     const shooter = players.get(socket.id);
     if (shooter && shooter.alive) {
-      // Broadcast shot to all other players for visual effects
+      // Broadcast shot to all other players to create their own projectiles
       socket.broadcast.emit('playerShot', {
         playerId: socket.id,
         origin: data.origin,
         direction: data.direction
       });
+    }
+  });
+  
+  // Handle bullet hits (projectile-based)
+  socket.on('bulletHit', (data) => {
+    const { bulletId, targetPlayerId, damage, shooterId } = data;
+    
+    const shooter = players.get(shooterId);
+    const target = players.get(targetPlayerId);
+    
+    if (!shooter || !target || !target.alive) {
+      return; // Invalid hit
+    }
+    
+    // Prevent self-damage
+    if (shooterId === targetPlayerId) {
+      return;
+    }
+    
+    console.log(`Bullet ${bulletId} hit player ${targetPlayerId} for ${damage} damage`);
+    
+    // Apply damage
+    target.health -= damage;
+    
+    if (target.health <= 0) {
+      target.health = 0;
+      target.alive = false;
       
-      // Check for hits (server-side hit detection)
-      checkHit(socket.id, data.origin, data.direction);
+      // Notify all players about the kill
+      io.emit('playerKilled', {
+        killerId: shooterId,
+        victimId: targetPlayerId
+      });
+      
+      console.log(`Player ${targetPlayerId} killed by ${shooterId}`);
+      
+      // Schedule respawn
+      setTimeout(() => {
+        respawnPlayer(targetPlayerId);
+      }, gameConfig.respawnTime);
+    } else {
+      // Just notify target about damage
+      io.to(targetPlayerId).emit('playerDamaged', {
+        damage: damage,
+        health: target.health,
+        shooterId: shooterId
+      });
     }
   });
   
@@ -114,75 +170,8 @@ io.on('connection', (socket) => {
   });
 });
 
-// Hit detection function
-function checkHit(shooterId, origin, direction) {
-  const maxDistance = 100;
-  const hitboxRadius = 1; // Simple sphere collision
-  
-  players.forEach((player, playerId) => {
-    if (playerId === shooterId || !player.alive) return;
-    
-    // Simple ray-sphere intersection
-    const playerPos = player.position;
-    const rayOrigin = origin;
-    const rayDir = direction;
-    
-    // Vector from ray origin to sphere center
-    const oc = {
-      x: rayOrigin.x - playerPos.x,
-      y: rayOrigin.y - playerPos.y,
-      z: rayOrigin.z - playerPos.z
-    };
-    
-    const a = rayDir.x * rayDir.x + rayDir.y * rayDir.y + rayDir.z * rayDir.z;
-    const b = 2 * (oc.x * rayDir.x + oc.y * rayDir.y + oc.z * rayDir.z);
-    const c = oc.x * oc.x + oc.y * oc.y + oc.z * oc.z - hitboxRadius * hitboxRadius;
-    
-    const discriminant = b * b - 4 * a * c;
-    
-    if (discriminant >= 0) {
-      const t = (-b - Math.sqrt(discriminant)) / (2 * a);
-      if (t >= 0 && t <= maxDistance) {
-        // Hit detected!
-        handleHit(shooterId, playerId);
-      }
-    }
-  });
-}
-
-// Handle hit logic
-function handleHit(shooterId, victimId) {
-  const victim = players.get(victimId);
-  const shooter = players.get(shooterId);
-  
-  if (victim && shooter) {
-    const damage = 34; // Damage per hit
-    victim.health -= damage;
-    
-    if (victim.health <= 0) {
-      victim.health = 0;
-      victim.alive = false;
-      
-      // Notify all players about the kill
-      io.emit('playerKilled', {
-        killerId: shooterId,
-        victimId: victimId
-      });
-      
-      // Schedule respawn
-      setTimeout(() => {
-        respawnPlayer(victimId);
-      }, gameConfig.respawnTime);
-    } else {
-      // Just notify about damage
-      io.to(victimId).emit('playerDamaged', {
-        damage: damage,
-        health: victim.health,
-        shooterId: shooterId
-      });
-    }
-  }
-}
+// Note: Hit detection is now handled client-side through projectile collision
+// The server validates hits when clients report bulletHit events
 
 // Respawn player
 function respawnPlayer(playerId) {

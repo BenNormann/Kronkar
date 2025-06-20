@@ -264,11 +264,37 @@
     <!-- Babylon.js -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script>
+        // Wait for all scripts to load before initializing
+        window.babylonReady = new Promise((resolve) => {
+            if (typeof BABYLON !== 'undefined' && BABYLON.SceneLoader) {
+                resolve();
+            } else {
+                const checkBabylon = setInterval(() => {
+                    if (typeof BABYLON !== 'undefined' && BABYLON.SceneLoader) {
+                        clearInterval(checkBabylon);
+                        resolve();
+                    }
+                }, 100);
+            }
+        });
+        
+        window.addEventListener('DOMContentLoaded', async () => {
+            await window.babylonReady;
+            console.log('BABYLON available:', typeof BABYLON !== 'undefined');
+            console.log('BABYLON.SceneLoader available:', typeof BABYLON.SceneLoader !== 'undefined');
+            console.log('BABYLON.SceneLoader.ImportMesh available:', typeof BABYLON.SceneLoader.ImportMesh !== 'undefined');
+        });
+    </script>
     
     <!-- Socket.IO Client -->
     <script src="/socket.io/socket.io.js"></script>
     
+    <!-- Weapon Configs -->
+    <script src="assets/weapons/configs/bulldog.js"></script>
+    
     <!-- Game Scripts -->
+    <script src="js/asset_loader.js"></script>
     <script src="js/game.js"></script>
     <script src="js/player.js"></script>
     <script src="js/network.js"></script>

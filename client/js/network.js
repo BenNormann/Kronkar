@@ -62,7 +62,9 @@ class NetworkManager {
                     data.player.position.z
                 );
                 this.game.player.position = spawnPos;
-                this.game.player.camera.position = spawnPos;
+                this.game.player.camera.position = spawnPos.clone();
+                this.game.player.camera.position.y += this.game.player.eyeHeight; // Apply proper eye height
+                console.log('Player positioned by server at:', spawnPos.toString());
             }
             
             // Add existing players
@@ -105,12 +107,13 @@ class NetworkManager {
             }
         });
         
-        // Player shot
+        // Player shot - create projectile for other players' shots
         this.socket.on('playerShot', (data) => {
-            // Create visual effect for other players' shots
-            this.game.createBulletTrail(
+            // Create physics projectile for other players' shots
+            this.game.createProjectile(
                 new BABYLON.Vector3(data.origin.x, data.origin.y, data.origin.z),
-                new BABYLON.Vector3(data.direction.x, data.direction.y, data.direction.z)
+                new BABYLON.Vector3(data.direction.x, data.direction.y, data.direction.z),
+                data.playerId
             );
         });
         
@@ -140,6 +143,7 @@ class NetworkManager {
                     data.player.position.z
                 );
                 this.game.player.respawn(spawnPos);
+                console.log('Player respawned by server at:', spawnPos.toString());
             } else {
                 // Update remote player
                 const remotePlayer = this.game.remotePlayers.get(data.playerId);

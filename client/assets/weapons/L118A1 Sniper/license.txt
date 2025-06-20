@@ -1,0 +1,11 @@
+Model Information:
+* title:	Low-Poly L118A1
+* source:	https://sketchfab.com/3d-models/low-poly-l118a1-5e2f001d6e6245bcacf2b1e2de8892f4
+* author:	TastyTony (https://sketchfab.com/TastyTony)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Low-Poly L118A1" (https://sketchfab.com/3d-models/low-poly-l118a1-5e2f001d6e6245bcacf2b1e2de8892f4) by TastyTony (https://sketchfab.com/TastyTony) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

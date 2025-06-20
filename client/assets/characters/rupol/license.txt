@@ -1,0 +1,11 @@
+Model Information:
+* title:	Police_ru combat online
+* source:	https://sketchfab.com/3d-models/police-ru-combat-online-861b349c1407481f95a179a68402eebc
+* author:	X (https://sketchfab.com/eqisX)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Police_ru combat online" (https://sketchfab.com/3d-models/police-ru-combat-online-861b349c1407481f95a179a68402eebc) by X (https://sketchfab.com/eqisX) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -6,23 +6,62 @@ class AssetLoader {
 
     // Load a glTF/glb model
     async loadModel(name, folder, filename) {
-        return new Promise((resolve, reject) => {
-            BABYLON.ImportMesh("", folder, filename, this.scene, (meshes, particleSystems, skeletons) => {
-                console.log(`Loaded model: ${name}`);
+        try {
+            console.log(`Loading model ${name} from ${folder}${filename}`);
+            
+            // Check what's available
+            console.log('BABYLON.SceneLoader available:', typeof BABYLON.SceneLoader !== 'undefined');
+            console.log('BABYLON.SceneLoader.ImportMeshAsync available:', typeof BABYLON.SceneLoader?.ImportMeshAsync !== 'undefined');
+            console.log('BABYLON.SceneLoader.ImportMesh available:', typeof BABYLON.SceneLoader?.ImportMesh !== 'undefined');
+            
+            // Try the modern async API first
+            if (BABYLON.SceneLoader && typeof BABYLON.SceneLoader.ImportMeshAsync === 'function') {
+                console.log('Using ImportMeshAsync...');
+                const result = await BABYLON.SceneLoader.ImportMeshAsync("", folder, filename, this.scene);
+                
+                console.log(`Loaded model: ${name}`, result);
                 this.loadedAssets.set(name, {
-                    meshes: meshes,
-                    particleSystems: particleSystems,
-                    skeletons: skeletons
+                    meshes: result.meshes,
+                    particleSystems: result.particleSystems,
+                    skeletons: result.skeletons
                 });
-                resolve({ meshes, particleSystems, skeletons });
-            }, (progress) => {
-                // Loading progress
-                console.log(`Loading ${name}: ${(progress.loaded / progress.total * 100).toFixed(2)}%`);
-            }, (error) => {
-                console.error(`Failed to load ${name}:`, error);
-                reject(error);
-            });
-        });
+                
+                return {
+                    meshes: result.meshes,
+                    particleSystems: result.particleSystems,
+                    skeletons: result.skeletons
+                };
+            }
+            // Fallback to callback-based API
+            else if (BABYLON.SceneLoader && typeof BABYLON.SceneLoader.ImportMesh === 'function') {
+                console.log('Using ImportMesh callback...');
+                return new Promise((resolve, reject) => {
+                    BABYLON.SceneLoader.ImportMesh("", folder, filename, this.scene, 
+                        (meshes, particleSystems, skeletons) => {
+                            console.log(`Loaded model: ${name}`);
+                            this.loadedAssets.set(name, {
+                                meshes: meshes,
+                                particleSystems: particleSystems,
+                                skeletons: skeletons
+                            });
+                            resolve({ meshes, particleSystems, skeletons });
+                        },
+                        (progress) => {
+                            console.log(`Loading ${name}: ${(progress.loaded / progress.total * 100).toFixed(2)}%`);
+                        },
+                        (error) => {
+                            console.error(`Failed to load ${name}:`, error);
+                            reject(error);
+                        }
+                    );
+                });
+            } else {
+                throw new Error('BABYLON.SceneLoader is not available. Make sure Babylon.js loaders are properly loaded.');
+            }
+        } catch (error) {
+            console.error(`Failed to load model ${name}:`, error);
+            throw error;
+        }
     }
 
     // Load multiple assets
