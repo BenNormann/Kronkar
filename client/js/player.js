@@ -172,6 +172,19 @@ class Player {
             mesh.checkCollisions = false; // Also disable physics collisions
             mesh.metadata = { isWeapon: true }; // Add weapon tag for filtering
             
+            // Fix Z-fighting issues with polygon offset
+            if (mesh.material) {
+                // Apply slight depth bias to prevent Z-fighting between overlapping weapon parts
+                mesh.material.depthBias = -0.0001 * (index + 1); // Different bias per mesh
+                
+                // Ensure proper depth testing
+                mesh.material.depthFunction = BABYLON.Engine.LEQUAL;
+                
+                // Additional material optimizations for stability
+                mesh.material.backFaceCulling = true;
+                mesh.material.twoSidedLighting = false;
+            }
+            
             // Performance optimizations for weapon meshes (but don't freeze world matrix!)
             mesh.alwaysSelectAsActiveMesh = true; // Skip frustum culling for weapons
             mesh.doNotSyncBoundingInfo = true; // Skip bounding info updates
@@ -1172,6 +1185,31 @@ class RemotePlayer {
                                 meshIndex: index 
                             };
                             
+                            // Fix material and lighting issues
+                            if (mesh.material) {
+                                // Ensure proper lighting response
+                                mesh.material.backFaceCulling = true;
+                                mesh.material.twoSidedLighting = false;
+                                
+                                // Fix Z-fighting issues with polygon offset for character parts
+                                mesh.material.depthBias = -0.00005 * (index + 1); // Smaller bias for characters
+                                mesh.material.depthFunction = BABYLON.Engine.LEQUAL;
+                                
+                                // Optimize material for better performance
+                                if (mesh.material.diffuseTexture) {
+                                    mesh.material.diffuseTexture.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                                    mesh.material.diffuseTexture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                                }
+                                
+                                // Fix potential transparency issues
+                                if (mesh.material.hasAlpha) {
+                                    mesh.material.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+                                }
+                            }
+                            
+                            // Disable frustum culling to prevent disappearing characters
+                            mesh.alwaysSelectAsActiveMesh = true;
+                            
                             console.log(`Character mesh ${index} for player ${this.id}: ${mesh.name}`);
                         }
                     });
@@ -1340,9 +1378,9 @@ class RemotePlayer {
         
         if (!this.alive) return;
         
-        // Smooth interpolation to target position
-        this.position = BABYLON.Vector3.Lerp(this.position, this.targetPosition, deltaTime * 10);
-        this.rotation = BABYLON.Vector3.Lerp(this.rotation, this.targetRotation, deltaTime * 10);
+        // Smooth interpolation to target position (reduced speed to prevent glitching)
+        this.position = BABYLON.Vector3.Lerp(this.position, this.targetPosition, deltaTime * 5);
+        this.rotation = BABYLON.Vector3.Lerp(this.rotation, this.targetRotation, deltaTime * 5);
         
         // Update mesh position (character container or fallback mesh)
         if (this.mesh) {
@@ -1368,11 +1406,23 @@ class RemotePlayer {
     }
     
     updateFromServer(playerData) {
-        this.targetPosition = new BABYLON.Vector3(
+        const newTargetPosition = new BABYLON.Vector3(
             playerData.position.x, 
             playerData.position.y, 
             playerData.position.z
         );
+        
+        // Check for dramatic position changes that might cause glitching
+        const distanceToNewTarget = BABYLON.Vector3.Distance(this.position, newTargetPosition);
+        if (distanceToNewTarget > 50) {
+            // If position change is too dramatic, teleport instead of interpolating
+            console.log(`Large position change detected for player ${this.id}: ${distanceToNewTarget} units`);
+            this.position = newTargetPosition.clone();
+            this.targetPosition = newTargetPosition;
+        } else {
+            this.targetPosition = newTargetPosition;
+        }
+        
         this.targetRotation = new BABYLON.Vector3(
             playerData.rotation.x, 
             playerData.rotation.y, 

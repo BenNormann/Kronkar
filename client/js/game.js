@@ -77,7 +77,7 @@ class Game {
             this.engine.resize();
         });
         
-        // Render loop
+        // Render loop with frame rate optimization
         this.engine.runRenderLoop(() => {
             if (this.scene) {
                 this.update();
@@ -108,12 +108,16 @@ class Game {
         this.camera = new BABYLON.FreeCamera('camera', new BABYLON.Vector3(0, 2, 0), this.scene);
         this.camera.setTarget(BABYLON.Vector3.Zero());
         
-        // Adjust clipping planes for FPS weapons - bring near plane much closer
-        this.camera.minZ = 0.001; // Extremely close near clipping plane for weapon visibility
-        this.camera.maxZ = 2000; // Increased for large maps
+        // Adjust clipping planes for FPS weapons - optimized for depth precision
+        this.camera.minZ = 0.01; // Close enough for weapons but better depth precision
+        this.camera.maxZ = 1000; // Reduced for better depth buffer precision
         
         // Set as active camera
         this.scene.activeCamera = this.camera;
+        
+        // Optimize rendering for better character stability
+        this.scene.skipPointerMovePicking = true; // Reduce unnecessary picking calculations
+        this.scene.autoClear = true; // Ensure proper frame clearing
         
         // Create default map AFTER camera setup
         await this.createDefaultMap();
