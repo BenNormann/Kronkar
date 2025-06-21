@@ -15,7 +15,7 @@ const L118A1Config = {
     },
     
     // Firing Properties - Sniper characteristics
-    fireRate: 45, // Very slow - about 1 shot every 1.3 seconds
+    fireRate: 80, // Very slow - about 1 shot every 1.3 seconds
     fireMode: "semi", // Semi-automatic only
     damage: 120, // High damage - one-shot kill potential
     

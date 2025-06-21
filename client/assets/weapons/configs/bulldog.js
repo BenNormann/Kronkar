@@ -17,7 +17,7 @@ const BulldogConfig = {
     // Firing Properties
     fireRate: 600, // Rounds per minute (decreased from previous)
     fireMode: "automatic", // automatic, semi, burst
-    damage: 34,
+    damage: 20,
     
     // Ballistics
     projectile: {

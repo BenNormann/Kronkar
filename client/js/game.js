@@ -11,12 +11,26 @@ class Game {
         
         this.isPointerLocked = false;
         this.gameStarted = false;
-        this.debugMode = true; // Set to true to see spawn point markers and debug info
+        this.debugMode = false; // Set to false by default - toggle with F1
+        this.debugMarkers = []; // Array to track debug markers for show/hide
         
         // Game objects
         this.remotePlayers = new Map();
         this.bullets = [];
         this.map = null;
+        
+        // Health pack system
+        this.healthPacks = [];
+        this.maxHealthPacks = 3;
+        this.healthPackSpawnPoints = [
+            new BABYLON.Vector3(448.20, 27.40, -890.88),  // +5 units higher
+            new BABYLON.Vector3(426.38, -68.60, -38.54),  // +5 units higher
+            new BABYLON.Vector3(63.69, -11.00, 212.66),   // +5 units higher
+            new BABYLON.Vector3(-557.30, 27.40, 232.48),  // +5 units higher
+            new BABYLON.Vector3(-572.54, -11.00, -647.22), // +5 units higher
+            new BABYLON.Vector3(-258.71, -44.60, -433.67), // +5 units higher
+            new BABYLON.Vector3(-151.03, -49.40, -650.39)  // +5 units higher
+        ];
         
         // Performance
         this.lastUpdateTime = 0;
@@ -480,8 +494,7 @@ class Game {
         // F1 to toggle debug mode, F for Flowstate debug, number keys for weapon switching (ESC handled by UIManager)
         document.addEventListener('keydown', (event) => {
             if (event.code === 'F1') {
-                this.debugMode = !this.debugMode;
-                console.log('Debug mode:', this.debugMode ? 'ON' : 'OFF');
+                this.toggleDebugMode();
                 event.preventDefault();
             } else if (event.code === 'KeyF' && this.flowstateManager && this.gameStarted) {
                 // Toggle max Flowstate for debugging
@@ -540,6 +553,9 @@ class Game {
         if (clickToStart) {
             clickToStart.style.display = 'block';
         }
+        
+        // Initialize health packs when game starts
+        this.initHealthPacks();
         
         this.gameStarted = true;
         console.log('Kronkar FPS started!');
@@ -607,6 +623,9 @@ class Game {
         if (this.flowstateManager) {
             this.flowstateManager.update(deltaTime);
         }
+        
+        // Update health packs
+        this.updateHealthPacks(deltaTime);
         
         // Periodic cleanup of stuck audio (every 5 seconds)
         if (this.audioManager && Math.floor(now / 5000) !== this.lastAudioCleanup) {
@@ -894,6 +913,68 @@ class Game {
         return new BABYLON.Vector3(0, 2, 0);
     }
     
+    toggleDebugMode() {
+        this.debugMode = !this.debugMode;
+        console.log('Debug mode:', this.debugMode ? 'ON' : 'OFF');
+        
+        // Show/hide existing debug markers
+        this.debugMarkers.forEach(marker => {
+            if (marker && !marker.isDisposed()) {
+                marker.setEnabled(this.debugMode);
+            }
+        });
+        
+        // Update UI to show debug status
+        this.updateDebugUI();
+        
+        // If turning on debug mode and we have spawn points but no markers, create them
+        if (this.debugMode && this.spawnPoints && this.debugMarkers.length === 0) {
+            this.createDebugSpawnMarkers();
+        }
+    }
+    
+    updateDebugUI() {
+        // Update or create debug status indicator
+        let debugIndicator = document.getElementById('debugIndicator');
+        if (!debugIndicator) {
+            debugIndicator = document.createElement('div');
+            debugIndicator.id = 'debugIndicator';
+            debugIndicator.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-family: monospace;
+                font-size: 14px;
+                z-index: 1000;
+                display: none;
+            `;
+            document.body.appendChild(debugIndicator);
+        }
+        
+        if (this.debugMode) {
+            debugIndicator.textContent = 'DEBUG MODE: ON (F1 to toggle)';
+            debugIndicator.style.display = 'block';
+        } else {
+            debugIndicator.style.display = 'none';
+        }
+    }
+    
+    createDebugSpawnMarkers() {
+        if (this.spawnPoints) {
+            this.spawnPoints.forEach((spawnPoint, index) => {
+                this.addDebugMarker(
+                    spawnPoint, 
+                    `spawn_${index}`, 
+                    new BABYLON.Color3(0, 1, 0)
+                );
+            });
+        }
+    }
+    
     addDebugMarker(position, label, color) {
         // Create a debug sphere to visualize positions
         const marker = BABYLON.MeshBuilder.CreateSphere(`debugMarker_${label}`, {
@@ -915,10 +996,219 @@ class Game {
         marker.isPickable = false;
         marker.checkCollisions = false;
         
+        // Initially hide marker if debug mode is off
+        marker.setEnabled(this.debugMode);
+        
+        this.debugMarkers.push(marker);
+        
         return marker;
     }
 
+    // Health pack system methods
+    initHealthPacks() {
+        console.log('Initializing health pack system...');
+        // Spawn initial health packs
+        for (let i = 0; i < this.maxHealthPacks; i++) {
+            this.spawnHealthPack();
+        }
+    }
+    
+    spawnHealthPack() {
+        if (this.healthPacks.length >= this.maxHealthPacks) return;
+        
+        // Choose random spawn point
+        const randomIndex = Math.floor(Math.random() * this.healthPackSpawnPoints.length);
+        const spawnPoint = this.healthPackSpawnPoints[randomIndex].clone();
+        
+        // Create health pack as a big green plus sign
+        const healthPack = new BABYLON.TransformNode('healthPackParent', this.scene);
+        
+        // Create the cross arms - much bigger for visibility
+        const crossHorizontal = BABYLON.MeshBuilder.CreateBox('healthCrossH', {
+            width: 8,   // Much wider
+            height: 2,  // Thicker
+            depth: 2    // Thicker
+        }, this.scene);
+        crossHorizontal.parent = healthPack;
+        
+        const crossVertical = BABYLON.MeshBuilder.CreateBox('healthCrossV', {
+            width: 2,   // Thicker
+            height: 8,  // Much taller
+            depth: 2    // Thicker
+        }, this.scene);
+        crossVertical.parent = healthPack;
+        
+        healthPack.position = spawnPoint;
+        
+        // Bright green material with strong glow
+        const greenMaterial = new BABYLON.StandardMaterial('healthPackGreen', this.scene);
+        greenMaterial.diffuseColor = new BABYLON.Color3(0, 1, 0); // Bright green
+        greenMaterial.emissiveColor = new BABYLON.Color3(0, 0.5, 0); // Strong green glow
+        greenMaterial.specularColor = new BABYLON.Color3(0.2, 1, 0.2); // Green highlights
+        
+        crossHorizontal.material = greenMaterial;
+        crossVertical.material = greenMaterial;
+        
+        // Make it non-collidable but detectable for collection
+        crossHorizontal.checkCollisions = false;
+        crossVertical.checkCollisions = false;
+        crossHorizontal.isPickable = false; // Don't interfere with shooting
+        crossVertical.isPickable = false; // Don't interfere with shooting
+        
+        // Add metadata for identification
+        healthPack.metadata = { 
+            isHealthPack: true,
+            basePosition: spawnPoint.clone(),
+            floatOffset: Math.random() * Math.PI * 2, // Random start phase
+            rotationSpeed: Math.random() * 3 + 2, // Faster spinning (2-5 rad/s)
+            crossHorizontal: crossHorizontal,
+            crossVertical: crossVertical
+        };
+        
+        this.healthPacks.push(healthPack);
+        
+        console.log(`Health pack spawned at: ${spawnPoint.toString()}`);
+    }
+    
+    updateHealthPacks(deltaTime) {
+        for (let i = this.healthPacks.length - 1; i >= 0; i--) {
+            const healthPack = this.healthPacks[i];
+            
+            if (!healthPack || healthPack.isDisposed()) {
+                this.healthPacks.splice(i, 1);
+                continue;
+            }
+            
+            // Floating animation
+            healthPack.metadata.floatOffset += deltaTime * 2; // Float cycle speed
+            const floatHeight = Math.sin(healthPack.metadata.floatOffset) * 2.0; // Bigger float amplitude
+            healthPack.position.y = healthPack.metadata.basePosition.y + floatHeight;
+            
+            // Spinning animation - spin around Y axis
+            healthPack.rotation.y += healthPack.metadata.rotationSpeed * deltaTime;
+            
+            // Add some subtle rotation on other axes for more dynamic movement
+            healthPack.rotation.x = Math.sin(healthPack.metadata.floatOffset * 0.5) * 0.2;
+            healthPack.rotation.z = Math.cos(healthPack.metadata.floatOffset * 0.7) * 0.15;
+            
+            // Check collision with player - much bigger hitbox
+            if (this.player && this.player.alive) {
+                const distance = BABYLON.Vector3.Distance(healthPack.position, this.player.position);
+                if (distance < 8.0) { // Much bigger collection radius
+                    this.collectHealthPack(healthPack, i);
+                }
+            }
+        }
+        
+        // Maintain health pack count
+        if (this.healthPacks.length < this.maxHealthPacks) {
+            // Delay between spawns to prevent immediate respawn
+            if (!this.lastHealthPackSpawn || Date.now() - this.lastHealthPackSpawn > 5000) {
+                this.spawnHealthPack();
+                this.lastHealthPackSpawn = Date.now();
+            }
+        }
+    }
+    
+    collectHealthPack(healthPack, index) {
+        if (!this.player || this.player.health >= 100) return; // Don't collect if already full health
+        
+        // Restore player to full health
+        this.player.health = 100;
+        console.log('Health pack collected! Health restored to 100');
+        
+        // Play collection sound if available
+        if (this.audioManager) {
+            // Could add a health pack pickup sound here
+        }
+        
+        // Create collection effect
+        this.createHealthPackEffect(healthPack.position);
+        
+        // Remove health pack
+        healthPack.dispose();
+        this.healthPacks.splice(index, 1);
+        
+        // Update UI health display
+        if (this.uiManager) {
+            this.uiManager.updateHealth(this.player.health);
+        }
+        
+        // Send health update to server if networked
+        if (this.networkManager) {
+            this.networkManager.socket.emit('healthPackCollected', {
+                playerId: this.networkManager.playerId,
+                newHealth: this.player.health
+            });
+        }
+    }
+    
+    createHealthPackEffect(position) {
+        // Create a visual effect when health pack is collected
+        const effect = BABYLON.MeshBuilder.CreateSphere('healthEffect', {
+            diameter: 4
+        }, this.scene);
+        
+        effect.position = position;
+        
+        // Green healing effect material
+        const effectMaterial = new BABYLON.StandardMaterial('healthEffectMat', this.scene);
+        effectMaterial.emissiveColor = new BABYLON.Color3(0, 1, 0); // Bright green
+        effectMaterial.alpha = 0.7; // Semi-transparent
+        effect.material = effectMaterial;
+        
+        // Make it non-interactable
+        effect.isPickable = false;
+        effect.checkCollisions = false;
+        effect.metadata = { isEffect: true };
+        
+        // Animate expansion and fade out
+        const expandAnimation = new BABYLON.Animation(
+            'healthEffectExpand',
+            'scaling',
+            30,
+            BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        
+        const fadeAnimation = new BABYLON.Animation(
+            'healthEffectFade',
+            'material.alpha',
+            30,
+            BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+            BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+        );
+        
+        expandAnimation.setKeys([
+            { frame: 0, value: new BABYLON.Vector3(0.1, 0.1, 0.1) },
+            { frame: 30, value: new BABYLON.Vector3(2, 2, 2) }
+        ]);
+        
+        fadeAnimation.setKeys([
+            { frame: 0, value: 0.7 },
+            { frame: 30, value: 0 }
+        ]);
+        
+        // Play animations and dispose after
+        this.scene.beginAnimation(effect, 0, 30, false);
+        this.scene.beginAnimation(effect.material, 0, 30, false);
+        
+        setTimeout(() => {
+            if (!effect.isDisposed()) {
+                effect.dispose();
+            }
+        }, 1000);
+    }
+
     dispose() {
+        // Dispose health packs
+        this.healthPacks.forEach(healthPack => {
+            if (healthPack && !healthPack.isDisposed()) {
+                healthPack.dispose();
+            }
+        });
+        this.healthPacks = [];
+        
         if (this.flowstateManager) {
             this.flowstateManager.dispose();
             this.flowstateManager = null;

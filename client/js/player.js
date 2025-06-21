@@ -21,7 +21,7 @@ class Player {
         
                           // Movement settings - increased for large dust2 map
         this.speed = 150;  // Fast enough for large map but not breaking collision
-        this.horizontalSpeed = 75; // Half speed for left/right strafe movement
+        this.horizontalSpeed = 40; // Reduced strafe speed for left/right movement (was 75)
         this.sprintSpeed = 225; // 1.5x normal speed when sprinting
         this.sprintMultiplier = 1.5; // Sprint multiplier (sprintSpeed / speed)
         this.jumpForce = 70; // Higher jump for better map navigation (doubled)
