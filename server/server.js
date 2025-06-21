@@ -103,7 +103,8 @@ io.on('connection', (socket) => {
       socket.broadcast.emit('playerShot', {
         playerId: socket.id,
         origin: data.origin,
-        direction: data.direction
+        direction: data.direction,
+        weaponType: data.weaponType || 'bulldog' // Forward weapon type with fallback
       });
     }
   });

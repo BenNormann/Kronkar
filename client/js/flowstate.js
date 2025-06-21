@@ -61,6 +61,69 @@ class FlowstateManager {
         this.currentVolume = 0;
     }
     
+    // Called when a specific remote player dies during flowstate
+    onRemotePlayerDeath(playerId) {
+        if (!this.isActive || !this.game.remotePlayers) return;
+        
+        const remotePlayer = this.game.remotePlayers.get(playerId);
+        if (!remotePlayer) return;
+        
+        console.log(`Flowstate: Immediately restoring materials for dying player ${playerId}`);
+        
+        // Immediately restore materials for this specific player to prevent white appearance
+        try {
+            // Restore main mesh
+            if (remotePlayer.mesh) {
+                const originalMaterial = this.originalMaterials.get(remotePlayer.mesh.uniqueId);
+                if (originalMaterial) {
+                    remotePlayer.mesh.material = originalMaterial;
+                    this.originalMaterials.delete(remotePlayer.mesh.uniqueId);
+                }
+                // Remove outline
+                if (remotePlayer.mesh.renderOutline !== undefined) {
+                    remotePlayer.mesh.renderOutline = false;
+                }
+            }
+            
+            // Restore character meshes
+            if (remotePlayer.characterMeshes && remotePlayer.characterMeshes.length > 0) {
+                remotePlayer.characterMeshes.forEach(mesh => {
+                    if (mesh) {
+                        const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
+                        if (originalMaterial) {
+                            mesh.material = originalMaterial;
+                            this.originalMaterials.delete(mesh.uniqueId);
+                        }
+                        // Remove outline
+                        if (mesh.renderOutline !== undefined) {
+                            mesh.renderOutline = false;
+                        }
+                    }
+                });
+            }
+            
+            // Restore character container meshes
+            if (remotePlayer.characterContainer) {
+                const childMeshes = remotePlayer.characterContainer.getChildMeshes();
+                childMeshes.forEach(mesh => {
+                    if (mesh) {
+                        const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
+                        if (originalMaterial) {
+                            mesh.material = originalMaterial;
+                            this.originalMaterials.delete(mesh.uniqueId);
+                        }
+                        // Remove outline
+                        if (mesh.renderOutline !== undefined) {
+                            mesh.renderOutline = false;
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn(`Flowstate: Error restoring materials for dying player ${playerId}:`, error);
+        }
+    }
+    
     startFlowstate() {
         console.log('Flowstate: Starting Flowstate mode');
         this.isActive = true;
@@ -352,9 +415,15 @@ class FlowstateManager {
             // Create or get highlight material
             let highlightMaterial = this.highlightMaterials.get(mesh.uniqueId);
             if (!highlightMaterial) {
-                // Store original material
+                // Store original material with safety checks
                 if (mesh.material && !this.originalMaterials.has(mesh.uniqueId)) {
-                    this.originalMaterials.set(mesh.uniqueId, mesh.material);
+                    // Only store materials that seem valid (not disposed or corrupted)
+                    if (mesh.material.name && !mesh.material.name.includes('flowstate_highlight')) {
+                        this.originalMaterials.set(mesh.uniqueId, mesh.material);
+                        console.log(`Flowstate: Stored original material for mesh ${mesh.name || mesh.uniqueId}`);
+                    } else {
+                        console.warn(`Flowstate: Skipping invalid material storage for mesh ${mesh.name || mesh.uniqueId}`);
+                    }
                 }
                 
                 // Create bright red highlight material
@@ -369,7 +438,7 @@ class FlowstateManager {
             
             // Calculate red glow scaling - brighter initial red
             const glowIntensity = intensity * intensity; // Quadratic scaling like original
-            const brightRed = Math.min(1.0, 0.4 + (glowIntensity * 0.6)); // Start at 40% red (brighter), scale to 100%
+            const brightRed = Math.min(1.0, 0.4 + (glowIntensity * 0.6));
             
             // Update material with stable red glow (brighter initial)
             if (highlightMaterial) {
@@ -395,8 +464,10 @@ class FlowstateManager {
                 }
             }
             
-            // Apply material to the mesh
-            mesh.material = highlightMaterial;
+            // Apply material to the mesh with safety check
+            if (mesh.material !== highlightMaterial) {
+                mesh.material = highlightMaterial;
+            }
             
             // Add outline rendering as backup for extra visibility - start subtle
             if (mesh.renderOutline !== undefined) {
@@ -410,6 +481,13 @@ class FlowstateManager {
                 mesh.getChildMeshes().forEach(childMesh => {
                     // Skip name tag meshes in child meshes too
                     if (childMesh && childMesh.material && (!childMesh.name || !childMesh.name.includes('nameTag'))) {
+                        // Store original material for child mesh too
+                        if (childMesh.material && !this.originalMaterials.has(childMesh.uniqueId)) {
+                            if (childMesh.material.name && !childMesh.material.name.includes('flowstate_highlight')) {
+                                this.originalMaterials.set(childMesh.uniqueId, childMesh.material);
+                            }
+                        }
+                        
                         childMesh.material = highlightMaterial;
                         
                         // Add outline to child meshes too - start subtle
@@ -430,13 +508,26 @@ class FlowstateManager {
     resetPlayerHighlighting() {
         if (!this.game.remotePlayers) return;
         
+        console.log('Flowstate: Resetting player highlighting');
+        
         // Restore original materials for all player meshes
         this.game.remotePlayers.forEach((remotePlayer, playerId) => {
+            // Skip players that are dead or in death animation - they shouldn't be highlighted anyway
+            if (!remotePlayer.alive || remotePlayer.deathAnimationPlaying) {
+                console.log(`Flowstate: Skipping material restoration for dead player ${playerId}`);
+                return;
+            }
+            
             // Restore main mesh
             if (remotePlayer.mesh) {
                 const originalMaterial = this.originalMaterials.get(remotePlayer.mesh.uniqueId);
                 if (originalMaterial) {
-                    remotePlayer.mesh.material = originalMaterial;
+                    try {
+                        remotePlayer.mesh.material = originalMaterial;
+                        console.log(`Flowstate: Restored main mesh material for player ${playerId}`);
+                    } catch (error) {
+                        console.warn(`Flowstate: Failed to restore main mesh material for player ${playerId}:`, error);
+                    }
                 }
                 // Remove outline
                 if (remotePlayer.mesh.renderOutline !== undefined) {
@@ -446,11 +537,27 @@ class FlowstateManager {
             
             // Restore character meshes
             if (remotePlayer.characterMeshes && remotePlayer.characterMeshes.length > 0) {
-                remotePlayer.characterMeshes.forEach(mesh => {
-                    if (mesh) {
+                remotePlayer.characterMeshes.forEach((mesh, index) => {
+                    if (mesh && mesh.material) {
                         const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
                         if (originalMaterial) {
-                            mesh.material = originalMaterial;
+                            try {
+                                mesh.material = originalMaterial;
+                                console.log(`Flowstate: Restored character mesh ${index} material for player ${playerId}`);
+                            } catch (error) {
+                                console.warn(`Flowstate: Failed to restore character mesh ${index} material for player ${playerId}:`, error);
+                                // If restoration fails, try to recreate the mesh's original material
+                                this.attemptMaterialRecreation(mesh, playerId, index);
+                            }
+                        } else {
+                            console.warn(`Flowstate: No original material found for character mesh ${index} of player ${playerId}`);
+                            // Try to recreate based on the mesh name or other properties
+                            this.attemptMaterialRecreation(mesh, playerId, index);
+                        }
+                        
+                        // Remove outline
+                        if (mesh.renderOutline !== undefined) {
+                            mesh.renderOutline = false;
                         }
                     }
                 });
@@ -459,11 +566,25 @@ class FlowstateManager {
             // Restore character container meshes
             if (remotePlayer.characterContainer) {
                 const childMeshes = remotePlayer.characterContainer.getChildMeshes();
-                childMeshes.forEach(mesh => {
-                    if (mesh) {
+                childMeshes.forEach((mesh, index) => {
+                    if (mesh && mesh.material) {
                         const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
                         if (originalMaterial) {
-                            mesh.material = originalMaterial;
+                            try {
+                                mesh.material = originalMaterial;
+                                console.log(`Flowstate: Restored container mesh ${index} material for player ${playerId}`);
+                            } catch (error) {
+                                console.warn(`Flowstate: Failed to restore container mesh ${index} material for player ${playerId}:`, error);
+                                this.attemptMaterialRecreation(mesh, playerId, index);
+                            }
+                        } else {
+                            console.warn(`Flowstate: No original material found for container mesh ${index} of player ${playerId}`);
+                            this.attemptMaterialRecreation(mesh, playerId, index);
+                        }
+                        
+                        // Remove outline
+                        if (mesh.renderOutline !== undefined) {
+                            mesh.renderOutline = false;
                         }
                     }
                 });
@@ -473,12 +594,52 @@ class FlowstateManager {
         // Clean up highlight materials
         this.highlightMaterials.forEach((material, meshId) => {
             if (material && material.dispose) {
-                material.dispose();
+                try {
+                    material.dispose();
+                } catch (error) {
+                    console.warn('Flowstate: Error disposing highlight material:', error);
+                }
             }
         });
         
         this.highlightMaterials.clear();
         this.originalMaterials.clear();
+        
+        console.log('Flowstate: Player highlighting reset complete');
+    }
+    
+    // Helper method to attempt material recreation when restoration fails
+    attemptMaterialRecreation(mesh, playerId, meshIndex) {
+        if (!mesh || !mesh.scene) return;
+        
+        try {
+            console.log(`Flowstate: Attempting to recreate material for mesh ${meshIndex} of player ${playerId}`);
+            
+            // Create a new standard material with reasonable defaults
+            const newMaterial = new BABYLON.StandardMaterial(`recreated_${playerId}_${meshIndex}`, mesh.scene);
+            
+            // Try to determine if this is a character mesh and apply appropriate colors
+            if (mesh.name && (mesh.name.includes('Object_') || mesh.name.includes('Cylinder'))) {
+                // This looks like a character mesh, give it character-like colors
+                newMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.7, 0.6); // Skin-like color
+                newMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                newMaterial.roughness = 0.8;
+            } else {
+                // Generic mesh, use a neutral color
+                newMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+                newMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            }
+            
+            // Apply good lighting properties
+            newMaterial.backFaceCulling = true;
+            newMaterial.twoSidedLighting = false;
+            
+            mesh.material = newMaterial;
+            console.log(`Flowstate: Successfully recreated material for mesh ${meshIndex} of player ${playerId}`);
+            
+        } catch (error) {
+            console.error(`Flowstate: Failed to recreate material for mesh ${meshIndex} of player ${playerId}:`, error);
+        }
     }
     
     // Update method called from game loop

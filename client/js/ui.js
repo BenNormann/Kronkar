@@ -32,6 +32,11 @@ class UIManager {
         this.respawnCountdown = 0;
         this.respawnInterval = null;
         
+        // Stuck respawn UI elements
+        this.stuckRespawnUI = document.getElementById('stuckRespawnUI');
+        this.stuckRespawnCountdown = document.getElementById('stuckRespawnCountdown');
+        this.stuckRespawnCancel = document.getElementById('stuckRespawnCancel');
+        
         this.setupEventListeners();
         this.loadUsername();
         this.loadSelectedMusic();
@@ -94,18 +99,33 @@ class UIManager {
                 event.preventDefault();
             }
             
-            // Escape key for settings menu
-            if (event.code === 'Escape' && !this.isDead) {
-                if (this.isSettingsOpen) {
-                    this.closeSettings();
-                } else if (this.isLeaderboardOpen) {
-                    this.toggleLeaderboard();
-                } else {
-                    this.openSettings();
+            // Escape key for settings menu or cancel respawn
+            if (event.code === 'Escape') {
+                if (this.game.player && this.game.player.respawnRequested) {
+                    // Cancel respawn if in progress
+                    this.game.player.cancelRespawn();
+                    event.preventDefault();
+                } else if (!this.isDead) {
+                    if (this.isSettingsOpen) {
+                        this.closeSettings();
+                    } else if (this.isLeaderboardOpen) {
+                        this.toggleLeaderboard();
+                    } else {
+                        this.openSettings();
+                    }
+                    event.preventDefault();
                 }
-                event.preventDefault();
             }
         });
+        
+        // Cancel respawn button
+        if (this.stuckRespawnCancel) {
+            this.stuckRespawnCancel.addEventListener('click', () => {
+                if (this.game.player) {
+                    this.game.player.cancelRespawn();
+                }
+            });
+        }
     }
     
     update(deltaTime) {
@@ -656,6 +676,24 @@ class UIManager {
             }
         `;
         document.head.appendChild(style);
+    }
+
+    showRespawnCountdown() {
+        if (this.stuckRespawnUI) {
+            this.stuckRespawnUI.style.display = 'flex';
+        }
+    }
+    
+    hideRespawnCountdown() {
+        if (this.stuckRespawnUI) {
+            this.stuckRespawnUI.style.display = 'none';
+        }
+    }
+    
+    updateRespawnCountdown(seconds) {
+        if (this.stuckRespawnCountdown) {
+            this.stuckRespawnCountdown.textContent = seconds;
+        }
     }
 }
 

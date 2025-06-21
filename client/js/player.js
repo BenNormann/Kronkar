@@ -12,6 +12,11 @@ class Player {
         this.alive = true;
         this.score = 0; // Kill score tracking
         
+        // Respawn system
+        this.respawnRequested = false;
+        this.respawnCountdown = 0;
+        this.respawnCooldown = false;
+        
         // Player height offset for proper human scale
         this.eyeHeight = 16; // Camera height above player position for proper human scale (doubled)
         
@@ -21,7 +26,7 @@ class Player {
         
                           // Movement settings - increased for large dust2 map
         this.speed = 150;  // Fast enough for large map but not breaking collision
-        this.horizontalSpeed = 40; // Reduced strafe speed for left/right movement (was 75)
+        this.horizontalSpeed = 75; // Reduced strafe speed for left/right movement (was 75)
         this.sprintSpeed = 225; // 1.5x normal speed when sprinting
         this.sprintMultiplier = 1.5; // Sprint multiplier (sprintSpeed / speed)
         this.jumpForce = 70; // Higher jump for better map navigation (doubled)
@@ -267,13 +272,20 @@ class Player {
                     event.preventDefault();
                     break;
                 case 'ShiftLeft':
+                case 'KeyT':
                 case 'ShiftRight':
                     this.keys.sprint = true;
+                    break;
+                case 'KeyX':
+                    if (this.alive && !this.respawnCooldown) {
+                        this.requestRespawn();
+                        event.preventDefault();
+                    }
                     break;
             }
             
             // Alternative check using event.key for better compatibility
-            if (event.key === 'Shift') {
+            if (event.key === 'Shift' || event.key === 'KeyT') {
                 this.keys.sprint = true;
             }
         });
@@ -295,6 +307,7 @@ class Player {
                 case 'Space':
                     this.keys.jump = false;
                     break;
+                case 'KeyT':
                 case 'ShiftLeft':
                 case 'ShiftRight':
                     this.keys.sprint = false;
@@ -302,7 +315,7 @@ class Player {
             }
             
             // Alternative check using event.key for better compatibility
-            if (event.key === 'Shift') {
+            if (event.key === 'Shift' || event.key === 'KeyT') {
                 this.keys.sprint = false;
             }
         });
@@ -335,6 +348,21 @@ class Player {
     update(deltaTime) {
         if (!this.alive) return;
         
+        // Handle respawn countdown
+        if (this.respawnRequested && this.respawnCountdown > 0) {
+            this.respawnCountdown -= deltaTime;
+            
+            // Update UI with countdown
+            if (this.game.uiManager) {
+                this.game.uiManager.updateRespawnCountdown(Math.ceil(this.respawnCountdown));
+            }
+            
+            // Execute respawn when countdown reaches 0
+            if (this.respawnCountdown <= 0) {
+                this.executeRespawn();
+            }
+        }
+        
         this.updateMovement(deltaTime);
         this.updateCamera(deltaTime);
         this.updateShooting(deltaTime);
@@ -365,12 +393,17 @@ class Player {
         forwardBackwardVector.normalize();
         leftRightVector.normalize();
         
-        // Combine movement vectors
-        moveVector = forwardBackwardVector.add(leftRightVector);
-        
-        // Apply sprint multiplier
+        // Apply different speeds for forward/backward vs left/right movement
         const sprintMultiplier = this.keys.sprint ? this.sprintMultiplier : 1.0;
-        moveVector.scaleInPlace(this.speed * sprintMultiplier);
+        
+        // Scale forward/backward movement with full speed
+        forwardBackwardVector.scaleInPlace(this.speed * sprintMultiplier);
+        
+        // Scale left/right movement with horizontal speed
+        leftRightVector.scaleInPlace(this.horizontalSpeed * sprintMultiplier);
+        
+        // Combine movement vectors after applying different speeds
+        moveVector = forwardBackwardVector.add(leftRightVector);
         
         // Handle diagonal movement normalization - when moving in two directions
         if (forwardBackwardVector.length() > 0 && leftRightVector.length() > 0) {
@@ -1092,6 +1125,11 @@ class Player {
     triggerDeathAnimation() {
         console.log(`Death animation triggered for player ${this.id}`);
         
+        // Immediately restore flowstate materials to prevent white skin bug
+        if (this.game.flowstateManager) {
+            this.game.flowstateManager.onRemotePlayerDeath(this.id);
+        }
+        
         // Play OOF sound
         if (this.game.audioManager) {
             this.game.audioManager.playDamageSound();
@@ -1105,7 +1143,7 @@ class Player {
         this.deathVelocity = new BABYLON.Vector3(
             (Math.random() - 0.5) * 6, // Random horizontal velocity (-3 to 3)
             550, // Much faster upward velocity
-            (Math.random() - 0.5) * 6  // Random horizontal velocity (-3 to 3)0
+            (Math.random() - 0.5) * 6  // Random horizontal velocity (-3 to 3)
         );
         
         // Set random rotation velocities for spinning effect
@@ -1200,6 +1238,54 @@ class Player {
             // Lost pointer lock, clear any accumulated mouse movement
             this.mouseAccumulation.x = 0;
             this.mouseAccumulation.y = 0;
+        }
+    }
+
+    requestRespawn() {
+        if (this.respawnRequested || !this.alive) return;
+        
+        console.log('Respawn requested - starting 10 second countdown');
+        this.respawnRequested = true;
+        this.respawnCountdown = 10.0; // 10 seconds
+        this.respawnCooldown = true;
+        
+        // Show respawn countdown UI
+        if (this.game.uiManager) {
+            this.game.uiManager.showRespawnCountdown();
+        }
+    }
+
+    executeRespawn() {
+        console.log('Executing respawn');
+        this.respawnRequested = false;
+        this.respawnCountdown = 0;
+        
+        // Get new spawn position
+        const newSpawnPosition = this.game.getSpawnPosition();
+        this.respawn(newSpawnPosition);
+        
+        // Hide respawn countdown UI
+        if (this.game.uiManager) {
+            this.game.uiManager.hideRespawnCountdown();
+        }
+        
+        // Start cooldown period (30 seconds)
+        setTimeout(() => {
+            this.respawnCooldown = false;
+            console.log('Respawn cooldown ended');
+        }, 30000);
+    }
+
+    cancelRespawn() {
+        if (!this.respawnRequested) return;
+        
+        console.log('Respawn cancelled');
+        this.respawnRequested = false;
+        this.respawnCountdown = 0;
+        
+        // Hide respawn countdown UI
+        if (this.game.uiManager) {
+            this.game.uiManager.hideRespawnCountdown();
         }
     }
 }
@@ -1634,6 +1720,11 @@ class RemotePlayer {
     
     triggerDeathAnimation() {
         console.log(`Death animation triggered for remote player ${this.id}`);
+        
+        // Immediately restore flowstate materials to prevent white skin bug
+        if (this.game.flowstateManager) {
+            this.game.flowstateManager.onRemotePlayerDeath(this.id);
+        }
         
         // Play OOF sound
         if (this.game.audioManager) {
