@@ -99,13 +99,9 @@ class UIManager {
                 event.preventDefault();
             }
             
-            // Escape key for settings menu or cancel respawn
+            // Escape key for settings menu
             if (event.code === 'Escape') {
-                if (this.game.player && this.game.player.respawnRequested) {
-                    // Cancel respawn if in progress
-                    this.game.player.cancelRespawn();
-                    event.preventDefault();
-                } else if (!this.isDead) {
+                if (!this.isDead) {
                     if (this.isSettingsOpen) {
                         this.closeSettings();
                     } else if (this.isLeaderboardOpen) {

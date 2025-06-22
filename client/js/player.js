@@ -277,7 +277,12 @@ class Player {
                     this.keys.sprint = true;
                     break;
                 case 'KeyX':
-                    if (this.alive && !this.respawnCooldown) {
+                    if (this.alive && this.respawnRequested) {
+                        // Cancel respawn if already in progress
+                        this.cancelRespawn();
+                        event.preventDefault();
+                    } else if (this.alive && !this.respawnCooldown) {
+                        // Start respawn if not on cooldown
                         this.requestRespawn();
                         event.preventDefault();
                     }
@@ -450,7 +455,7 @@ class Player {
         // Player collision capsule parameters
         const playerRadius = 1.2; // Player collision radius
         const playerHeight = 3.0; // Player collision height
-        const stepHeight = 1.0; // Maximum step height player can walk over
+        const stepHeight = 100.0; // Maximum step height player can walk over
         
         // Cache mesh filter for better performance
         const meshFilter = (mesh) => {
