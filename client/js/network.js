@@ -271,12 +271,54 @@ class NetworkManager {
             // Another client spawned a bot - create it locally
             if (!this.game.bots) this.game.bots = new Map();
             
-            console.log('Remote bot spawned:', data.botId);
-            const bot = new BotPlayer(this.game, data.botId);
-            bot.isNetworkHost = false; // Mark as remote bot
-            bot.position = new BABYLON.Vector3(data.position.x, data.position.y, data.position.z);
-            bot.username = data.username;
-            this.game.bots.set(data.botId, bot);
+            // Don't create bot if it already exists
+            if (this.game.bots.has(data.botId)) {
+                console.log('Bot already exists:', data.botId);
+                return;
+            }
+            
+            console.log('Remote bot spawned:', data.botId, 'by another client');
+            
+            try {
+                // Create bot data for remote bot
+                const remoteBotData = {
+                    id: data.botId,
+                    position: data.position,
+                    rotation: { x: 0, y: 0, z: 0 },
+                    health: 100,
+                    alive: true,
+                    score: 0,
+                    deaths: 0,
+                    username: data.username
+                };
+                
+                const bot = new BotPlayer(this.game, data.botId);
+                bot.isNetworkHost = false; // Mark as remote bot (this client doesn't control it)
+                bot.position = new BABYLON.Vector3(data.position.x, data.position.y, data.position.z);
+                bot.targetPosition = bot.position.clone();
+                bot.username = data.username;
+                bot.score = 0;
+                bot.deaths = 0;
+                
+                this.game.bots.set(data.botId, bot);
+                
+                console.log(`Remote bot ${bot.username} (${data.botId}) created successfully`);
+                
+                // If flowstate is active, apply highlighting to the new bot immediately
+                if (this.game.flowstateManager && this.game.flowstateManager.isActive) {
+                    // Longer delay to ensure the bot's meshes and materials are fully loaded
+                    setTimeout(() => {
+                        this.game.flowstateManager.highlightPlayer(bot, data.botId);
+                    }, 500);
+                }
+                
+                // Update leaderboard to show new bot
+                if (this.game.uiManager) {
+                    this.game.uiManager.updateLeaderboard();
+                }
+            } catch (error) {
+                console.error('Error creating remote bot:', error);
+            }
         });
         
         this.socket.on('botRemoved', (data) => {
@@ -286,6 +328,40 @@ class NetworkManager {
                 bot.dispose();
                 this.game.bots.delete(data.botId);
                 console.log('Remote bot removed:', data.botId);
+            }
+        });
+        
+        this.socket.on('botKilled', (data) => {
+            // Another client killed a bot - update scores and show kill feed
+            console.log('Bot killed by remote player:', data);
+            
+            // Update killer's score if they're a remote player
+            if (data.killerId !== this.playerId) {
+                const killerPlayer = this.game.remotePlayers.get(data.killerId);
+                if (killerPlayer) {
+                    killerPlayer.score = data.killerScore;
+                }
+            }
+            
+            // Update bot's death count if it exists locally
+            if (this.game.bots && this.game.bots.has(data.botId)) {
+                const bot = this.game.bots.get(data.botId);
+                bot.deaths = data.botDeaths;
+                
+                // Trigger death animation if not already dead
+                if (bot.alive) {
+                    bot.die();
+                }
+            }
+            
+            // Show kill feed (but not if it was our kill - we already showed it)
+            if (data.killerId !== this.playerId && this.game.uiManager) {
+                this.game.uiManager.showKillFeed(data.killerName, data.botName);
+            }
+            
+            // Update leaderboard
+            if (this.game.uiManager) {
+                this.game.uiManager.updateLeaderboard();
             }
         });
         
@@ -428,6 +504,20 @@ class NetworkManager {
         if (this.connected && this.socket) {
             this.socket.emit('botRemoved', { botId: botId });
             console.log('Sent bot removal notification:', botId);
+        }
+    }
+    
+    sendBotKilled(botId, killData) {
+        if (this.connected && this.socket) {
+            this.socket.emit('botKilled', {
+                botId: botId,
+                killerId: killData.killerId,
+                killerScore: killData.killerScore,
+                botDeaths: killData.botDeaths,
+                killerName: killData.killerName,
+                botName: killData.botName
+            });
+            console.log('Sent bot kill notification:', botId, 'killed by', killData.killerName);
         }
     }
 } 

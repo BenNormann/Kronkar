@@ -26,6 +26,7 @@ class FlowstateManager {
         // Player highlighting materials
         this.originalMaterials = new Map();
         this.highlightMaterials = new Map();
+        this.missingMaterialWarnings = new Set(); // Track warnings to prevent spam
         
         // Environment materials for dark filter
         this.originalEnvironmentMaterials = new Map();
@@ -154,6 +155,9 @@ class FlowstateManager {
         
         // Initialize visual effects
         this.initializeVisualEffects();
+        
+        // Apply player highlighting immediately for any existing players
+        this.updatePlayerHighlighting();
     }
     
     stopFlowstate() {
@@ -500,8 +504,10 @@ class FlowstateManager {
                     if (mesh.material.name && !mesh.material.name.includes('flowstate_highlight')) {
                         this.originalMaterials.set(mesh.uniqueId, mesh.material);
                         console.log(`Flowstate: Stored original material for mesh ${mesh.name || mesh.uniqueId}`);
-                    } else {
-                        console.warn(`Flowstate: Skipping invalid material storage for mesh ${mesh.name || mesh.uniqueId}`);
+                    } else if (mesh.material) {
+                        // Store material even if it doesn't have a name - it might be valid
+                        this.originalMaterials.set(mesh.uniqueId, mesh.material);
+                        console.log(`Flowstate: Stored unnamed material for mesh ${mesh.name || mesh.uniqueId}`);
                     }
                 }
                 
@@ -656,7 +662,13 @@ class FlowstateManager {
                             this.attemptMaterialRecreation(mesh, playerId, index);
                         }
                     } else {
-                        console.warn(`Flowstate: No original material found for character mesh ${index} of player ${playerId}`);
+                        // Only log warning once per player to reduce spam
+                        if (!this.missingMaterialWarnings) this.missingMaterialWarnings = new Set();
+                        const warningKey = `${playerId}_character_${index}`;
+                        if (!this.missingMaterialWarnings.has(warningKey)) {
+                            console.warn(`Flowstate: No original material found for character mesh ${index} of player ${playerId}`);
+                            this.missingMaterialWarnings.add(warningKey);
+                        }
                         // Try to recreate based on the mesh name or other properties
                         this.attemptMaterialRecreation(mesh, playerId, index);
                     }
@@ -771,7 +783,13 @@ class FlowstateManager {
                                 this.attemptMaterialRecreation(mesh, playerId, index);
                             }
                         } else {
-                            console.warn(`Flowstate: No original material found for container mesh ${index} of player ${playerId}`);
+                            // Only log warning once per player to reduce spam
+                            if (!this.missingMaterialWarnings) this.missingMaterialWarnings = new Set();
+                            const warningKey = `${playerId}_container_${index}`;
+                            if (!this.missingMaterialWarnings.has(warningKey)) {
+                                console.warn(`Flowstate: No original material found for container mesh ${index} of player ${playerId}`);
+                                this.missingMaterialWarnings.add(warningKey);
+                            }
                             this.attemptMaterialRecreation(mesh, playerId, index);
                         }
                         
@@ -849,8 +867,6 @@ class FlowstateManager {
                 // Only start checking for inactivity 1 second after flowstate starts
                 if (timeSinceFlowstateStart > 1000) {
                     if (!this.countdownActive && timeSinceMovement > 0) {
-                        // Player stopped moving, start countdown immediately
-                        console.log('Flowstate: Player stopped moving, starting countdown');
                         this.countdownActive = true;
                         this.countdownStartTime = currentTime;
                         this.createCountdownBars();
@@ -961,10 +977,8 @@ class FlowstateManager {
     // Called when player moves to reset inactivity timer
     onPlayerMovement() {
         if (this.isActive) {
-            console.log('Flowstate: Player movement detected, resetting timer');
             this.lastPlayerMovement = Date.now();
             if (this.countdownActive) {
-                console.log('Flowstate: Hiding countdown bars due to movement');
                 this.hideCountdownBars();
                 this.countdownActive = false;
             }
@@ -1018,10 +1032,6 @@ class FlowstateManager {
         
         const currentWidth = maxWidth * progress;
         
-        // Debug logging every 1 second
-        if (Math.floor(elapsed / 1000) !== Math.floor((elapsed - 100) / 1000)) {
-            console.log(`Flowstate: Countdown progress: ${(progress * 100).toFixed(1)}% (${elapsed}ms / ${this.inactivityTimeout}ms)`);
-        }
         
         // Update bar widths (they grow outward from center to screen edges)
         this.leftCountdownBar.style.width = `${currentWidth}px`;
@@ -1052,7 +1062,6 @@ class FlowstateManager {
         
         // If countdown complete, reset flowstate
         if (progress >= 1.0) {
-            console.log('Flowstate: Inactivity timeout reached, resetting flowstate');
             this.stopFlowstate();
             this.killStreak = 0;
             this.currentIntensity = 0;

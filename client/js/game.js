@@ -287,7 +287,7 @@ class Game {
             new BABYLON.Vector3(442, 40, -630),
             
             // Area 3: Around coordinates (371, -47, -836)
-            new BABYLON.Vector3(371, 40, -836),
+            new BABYLON.Vector3(371, 70, -836),
             
             // Area 4: Around coordinates (198, -47, -323) - FIXED: raised to prevent falling through
             new BABYLON.Vector3(198, 60, -323),
@@ -301,8 +301,8 @@ class Game {
             // Area 8: Around coordinates (-597, -46, -409)
             new BABYLON.Vector3(-597, 37, -409),
             
-            // Area 9: Around coordinates (-92, -48, -628)
-            new BABYLON.Vector3(-92, 40, -628),
+                    // Area 9: Around coordinates (-92, -48, -628)
+        new BABYLON.Vector3(-92, 45, -628),
             
             // Area 10: New spawn point near (-90, -58, -625) moved down 10 units
             new BABYLON.Vector3(-90, -68, -625),
@@ -870,6 +870,17 @@ class Game {
                      this.player.score++;
                      console.log('Your score is now:', this.player.score);
                      
+                     // Send bot kill notification to network
+                     if (this.networkManager) {
+                         this.networkManager.sendBotKilled(remotePlayer.id, {
+                             killerId: this.networkManager.playerId,
+                             killerScore: this.player.score,
+                             botDeaths: remotePlayer.deaths,
+                             killerName: this.uiManager ? this.uiManager.getCurrentUsername() : 'Unknown',
+                             botName: remotePlayer.username
+                         });
+                     }
+                     
                      // Trigger fly-up death animation (same as Player/RemotePlayer)
                      if (remotePlayer.triggerDeathAnimation) {
                          remotePlayer.triggerDeathAnimation();
@@ -985,6 +996,15 @@ class Game {
     addRemotePlayer(playerData) {
         const remotePlayer = new RemotePlayer(this, playerData);
         this.remotePlayers.set(playerData.id, remotePlayer);
+        
+        // If flowstate is active, apply highlighting to the new player immediately
+        if (this.flowstateManager && this.flowstateManager.isActive) {
+            // Longer delay to ensure the player's meshes and materials are fully loaded
+            setTimeout(() => {
+                this.flowstateManager.highlightPlayer(remotePlayer, playerData.id);
+            }, 500);
+        }
+        
         return remotePlayer;
     }
     
@@ -1026,6 +1046,22 @@ class Game {
             
             const bot = new BotPlayer(this, botId);
             this.bots.set(botId, bot);
+            
+            // Notify network about new bot spawn
+            if (this.networkManager) {
+                this.networkManager.sendBotSpawned(botId, {
+                    position: bot.position,
+                    username: bot.username
+                });
+            }
+            
+            // If flowstate is active, apply highlighting to the new bot immediately
+            if (this.flowstateManager && this.flowstateManager.isActive) {
+                // Longer delay to ensure the bot's meshes and materials are fully loaded
+                setTimeout(() => {
+                    this.flowstateManager.highlightPlayer(bot, botId);
+                }, 500);
+            }
             
             console.log(`Bot ${bot.username} (${botId}) spawned successfully`);
             console.log(`Total bots: ${this.bots.size}/${this.maxBots}`);

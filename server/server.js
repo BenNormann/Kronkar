@@ -33,13 +33,13 @@ const gameConfig = {
 const dust2SpawnPoints = [
   { x: 421, y: 40, z: -599 },
   { x: 442, y: 40, z: -630 },
-  { x: 371, y: 40, z: -836 },
+  { x: 371, y: 70, z: -836 },
   { x: 198, y: 40, z: -323 },
   { x: 62, y: 40, z: 138 },
   { x: -529, y: 40, z: -40 },
   { x: -582, y: 40, z: -569 },
   { x: -597, y: 30, z: -409 },
-  { x: -92, y: 40, z: -628 },
+  { x: -92, y: 45, z: -628 },
   { x: -90, y: -68, z: -625 }, // New spawn point moved down 10 units
   { x: 405, y: 40, z: -881 }
 ];
@@ -203,6 +203,12 @@ io.on('connection', (socket) => {
   socket.on('botRemoved', (data) => {
     // Relay bot removal notification to all other clients
     socket.broadcast.emit('botRemoved', data);
+  });
+  
+  socket.on('botKilled', (data) => {
+    // Relay bot kill notification to all other clients
+    console.log('Bot killed:', data.botId, 'by player:', data.killerId);
+    socket.broadcast.emit('botKilled', data);
   });
 
   // Handle disconnection

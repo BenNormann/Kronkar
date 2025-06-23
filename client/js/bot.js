@@ -904,7 +904,9 @@ class BotPlayer extends RemotePlayer {
                     position: this.position,
                     rotation: this.rotation,
                     alive: this.alive,
-                    health: this.health
+                    health: this.health,
+                    score: this.score,
+                    deaths: this.deaths
                 });
                 this.lastNetworkUpdate = currentTime;
             }
@@ -1106,6 +1108,10 @@ class BotPlayer extends RemotePlayer {
         this.targetRotation = { x: data.rotation.x, y: data.rotation.y, z: data.rotation.z };
         this.alive = data.alive;
         this.health = data.health;
+        
+        // Update score and deaths if provided
+        if (data.score !== undefined) this.score = data.score;
+        if (data.deaths !== undefined) this.deaths = data.deaths;
     }
 }
 
