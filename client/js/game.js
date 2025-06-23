@@ -17,6 +17,7 @@ class Game {
         // Game objects
         this.remotePlayers = new Map();
         this.bots = new Map();
+        this.maxBots = 5; // Cap the maximum number of bots
         this.bullets = [];
         this.map = null;
         
@@ -1003,6 +1004,12 @@ class Game {
     spawnBot() {
         console.log('Attempting to spawn bot...');
         
+        // Check bot limit first
+        if (this.bots.size >= this.maxBots) {
+            console.log(`Bot limit reached (${this.maxBots}). Cannot spawn more bots.`);
+            return null;
+        }
+        
         // Check if BotPlayer class is available
         if (typeof BotPlayer === 'undefined') {
             console.error('BotPlayer class not found! Make sure bot.js is loaded.');
@@ -1017,7 +1024,7 @@ class Game {
             this.bots.set(botId, bot);
             
             console.log(`Bot ${bot.username} (${botId}) spawned successfully`);
-            console.log(`Total bots: ${this.bots.size}`);
+            console.log(`Total bots: ${this.bots.size}/${this.maxBots}`);
             
             return bot;
         } catch (error) {
@@ -1193,7 +1200,11 @@ class Game {
         crossHorizontal.checkCollisions = false;
         crossVertical.checkCollisions = false;
         crossHorizontal.isPickable = false; // Don't interfere with shooting
-        crossVertical.isPickable = false; // Don't interfere with shooting
+        crossVertical.isPickable = false;
+        
+        // Add metadata for identification (important for flowstate filter exclusion)
+        crossHorizontal.metadata = { isHealthPack: true };
+        crossVertical.metadata = { isHealthPack: true };
         
         // Add metadata for identification
         healthPack.metadata = { 

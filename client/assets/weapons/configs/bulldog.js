@@ -15,9 +15,9 @@ const BulldogConfig = {
     },
     
     // Firing Properties
-    fireRate: 600, // Rounds per minute (decreased from previous)
+    fireRate: 550, // Rounds per minute (decreased from previous)
     fireMode: "automatic", // automatic, semi, burst
-    damage: 20,
+    damage: 25,
     
     // Ballistics
     projectile: {
@@ -31,8 +31,8 @@ const BulldogConfig = {
     // Accuracy and Movement Error Configuration
     accuracy: {
         baseSpread: 0.005, // Base spread when stationary (radians)
-        movementMultiplier: 0.008, // How much movement affects accuracy (higher = more inaccurate when moving)
-        maxMovementPenalty: 0.05, // Maximum additional spread from movement (radians)
+        movementMultiplier: 0.005, // How much movement affects accuracy (higher = more inaccurate when moving)
+        maxMovementPenalty: 0.02, // Maximum additional spread from movement (radians)
         sprintPenalty: 1.5, // Additional penalty multiplier when sprinting
         movementThreshold: 10 // Movement speed threshold before penalty kicks in
     },

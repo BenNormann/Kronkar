@@ -27,6 +27,18 @@ class FlowstateManager {
         this.originalMaterials = new Map();
         this.highlightMaterials = new Map();
         
+        // Environment materials for dark filter
+        this.originalEnvironmentMaterials = new Map();
+        
+        // Inactivity timeout system
+        this.lastPlayerMovement = 0;
+        this.inactivityTimeout = 5000; // 5 seconds
+        this.countdownActive = false;
+        this.countdownStartTime = 0;
+        this.flowstateStartTime = 0; // Track when flowstate started
+        this.leftCountdownBar = null;
+        this.rightCountdownBar = null;
+        
         // Animation state
         this.lastUpdateTime = 0;
         this.transitionSpeed = 2.0; // Speed of visual transitions
@@ -128,6 +140,12 @@ class FlowstateManager {
         console.log('Flowstate: Starting Flowstate mode');
         this.isActive = true;
         
+        // Initialize movement tracking
+        const currentTime = Date.now();
+        this.lastPlayerMovement = currentTime;
+        this.flowstateStartTime = currentTime;
+        this.countdownActive = false;
+        
         // Show "Starting Flowstate" message
         this.game.uiManager?.showFlowstateMessage('Starting Flowstate', 500);
         
@@ -141,6 +159,10 @@ class FlowstateManager {
     stopFlowstate() {
         console.log('Flowstate: Stopping Flowstate mode');
         this.isActive = false;
+        
+        // Hide countdown bars if active
+        this.hideCountdownBars();
+        this.countdownActive = false;
         
         // Stop background music
         this.stopBackgroundMusic();
@@ -227,9 +249,6 @@ class FlowstateManager {
         
         console.log('Flowstate: Skipping global overlay - using selective darkening instead');
         
-        // Store original materials for environment darkening
-        this.originalEnvironmentMaterials = new Map();
-        
         // Dim the scene lighting and darken environment only
         this.dimSceneLighting();
         this.darkenEnvironmentMaterials();
@@ -290,7 +309,8 @@ class FlowstateManager {
                 mesh.metadata.isPlayerMesh || 
                 mesh.metadata.isWeapon || 
                 mesh.metadata.isHitEffect ||
-                mesh.metadata.isBullet
+                mesh.metadata.isBullet ||
+                mesh.metadata.isHealthPack // Skip health pack meshes to keep them bright and visible
             )) {
                 return;
             }
@@ -817,20 +837,34 @@ class FlowstateManager {
     
     // Update method called from game loop
     update(deltaTime) {
-        if (!this.isActive) {
-            return;
-        }
+        const currentTime = Date.now();
+        this.lastUpdateTime = currentTime;
         
-        // Update visual overlay opacity
-        this.updateVisualOverlay(deltaTime);
-        
-        // Update player highlighting
-        this.updatePlayerHighlighting();
-        
-        // Update music volume smoothly
-        if (this.backgroundMusic) {
-            const targetVolume = this.baseVolume * Math.min(this.killStreak / this.maxKillStreak, 1.0);
-            this.updateMusicVolume(targetVolume);
+        if (this.isActive) {
+            // Check for player inactivity
+            if (this.game.player && this.game.player.alive) {
+                const timeSinceMovement = currentTime - this.lastPlayerMovement;
+                const timeSinceFlowstateStart = currentTime - this.flowstateStartTime;
+                
+                // Only start checking for inactivity 1 second after flowstate starts
+                if (timeSinceFlowstateStart > 1000) {
+                    if (!this.countdownActive && timeSinceMovement > 0) {
+                        // Player stopped moving, start countdown immediately
+                        console.log('Flowstate: Player stopped moving, starting countdown');
+                        this.countdownActive = true;
+                        this.countdownStartTime = currentTime;
+                        this.createCountdownBars();
+                    }
+                    
+                    // Update countdown bars if active
+                    if (this.countdownActive) {
+                        this.updateCountdownBars();
+                    }
+                }
+            }
+            
+            // Update visual overlay
+            this.updateVisualOverlay(deltaTime);
         }
     }
     
@@ -909,27 +943,122 @@ class FlowstateManager {
 
     // Cleanup method
     dispose() {
-        console.log('Flowstate: Disposing FlowstateManager');
+        console.log('FlowstateManager: Disposing...');
+        
+        // Stop any active flowstate
         this.stopFlowstate();
         
-        // Clean up scene overlay
-        if (this.sceneOverlayPlane) {
-            this.sceneOverlayPlane.dispose();
-            this.sceneOverlayPlane = null;
-        }
-        if (this.sceneOverlayMaterial) {
-            this.sceneOverlayMaterial.dispose();
-            this.sceneOverlayMaterial = null;
-        }
+        // Clean up countdown bars
+        this.hideCountdownBars();
         
         // Clean up materials
-        this.highlightMaterials.forEach((material, meshId) => {
-            if (material && material.dispose) {
-                material.dispose();
-            }
-        });
-        
-        this.highlightMaterials.clear();
         this.originalMaterials.clear();
+        this.highlightMaterials.clear();
+        
+        console.log('FlowstateManager: Disposed');
+    }
+
+    // Called when player moves to reset inactivity timer
+    onPlayerMovement() {
+        if (this.isActive) {
+            console.log('Flowstate: Player movement detected, resetting timer');
+            this.lastPlayerMovement = Date.now();
+            if (this.countdownActive) {
+                console.log('Flowstate: Hiding countdown bars due to movement');
+                this.hideCountdownBars();
+                this.countdownActive = false;
+            }
+        }
+    }
+
+    createCountdownBars() {
+        // Create left countdown bar
+        this.leftCountdownBar = document.createElement('div');
+        this.leftCountdownBar.id = 'flowstateCountdownLeft';
+        this.leftCountdownBar.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            width: 0px;
+            height: 30px;
+            background: linear-gradient(90deg, #ff0000, #ff4444);
+            z-index: 1001;
+            transform-origin: right;
+            transition: width 0.1s linear;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+        `;
+        document.body.appendChild(this.leftCountdownBar);
+        
+        // Create right countdown bar
+        this.rightCountdownBar = document.createElement('div');
+        this.rightCountdownBar.id = 'flowstateCountdownRight';
+        this.rightCountdownBar.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 49%;
+            width: 0px;
+            height: 30px;
+            background: linear-gradient(90deg, #ff4444, #ff0000);
+            z-index: 1001;
+            transform-origin: left;
+            transition: width 0.1s linear;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+        `;
+        document.body.appendChild(this.rightCountdownBar);
+    }
+    
+    updateCountdownBars() {
+        if (!this.countdownActive || !this.leftCountdownBar || !this.rightCountdownBar) return;
+        
+        const elapsed = Date.now() - this.countdownStartTime;
+        const progress = Math.min(elapsed / this.inactivityTimeout, 1.0);
+        
+        // Calculate maximum width to reach screen edges
+        const maxWidth = window.innerWidth / 2; // Half screen width for each bar
+        
+        const currentWidth = maxWidth * progress;
+        
+        // Debug logging every 1 second
+        if (Math.floor(elapsed / 1000) !== Math.floor((elapsed - 100) / 1000)) {
+            console.log(`Flowstate: Countdown progress: ${(progress * 100).toFixed(1)}% (${elapsed}ms / ${this.inactivityTimeout}ms)`);
+        }
+        
+        // Update bar widths (they grow outward from center to screen edges)
+        this.leftCountdownBar.style.width = `${currentWidth}px`;
+        this.leftCountdownBar.style.marginLeft = `-${currentWidth}px`; // Grow to the left
+        
+        this.rightCountdownBar.style.width = `${currentWidth}px`;
+        // Right bar naturally grows to the right from 50%
+        
+        // Change color intensity as countdown progresses
+        const intensity = 0.3 + (progress * 0.7); // 30% to 100% intensity
+        this.leftCountdownBar.style.opacity = intensity;
+        this.rightCountdownBar.style.opacity = intensity;
+        
+        // If countdown complete, reset flowstate
+        if (progress >= 1.0) {
+            console.log('Flowstate: Inactivity timeout reached, resetting flowstate');
+            this.stopFlowstate();
+            this.killStreak = 0;
+            this.currentIntensity = 0;
+            this.targetIntensity = 0;
+            this.currentVolume = 0;
+            
+            // Show timeout message
+            if (this.game.uiManager) {
+                this.game.uiManager.showFlowstateMessage('Flowstate Lost - Inactivity', 1000);
+            }
+        }
+    }
+    
+    hideCountdownBars() {
+        if (this.leftCountdownBar) {
+            this.leftCountdownBar.remove();
+            this.leftCountdownBar = null;
+        }
+        if (this.rightCountdownBar) {
+            this.rightCountdownBar.remove();
+            this.rightCountdownBar = null;
+        }
     }
 } 

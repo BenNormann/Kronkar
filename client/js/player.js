@@ -610,6 +610,17 @@ class Player {
         this.isMoving = (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) && 
                        this.isGrounded && horizontalDistance > 0.005;
         
+        // Notify flowstate manager about player movement (use actual velocity, not just grounded movement)
+        if (this.game.flowstateManager) {
+            // Check if player has any meaningful movement (horizontal or vertical)
+            const totalVelocity = Math.abs(this.velocity.x) + Math.abs(this.velocity.z) + Math.abs(this.velocity.y);
+            const hasMovementInput = this.keys.forward || this.keys.backward || this.keys.left || this.keys.right || this.keys.jump;
+            
+            if (totalVelocity > 5.0 || hasMovementInput) {
+                this.game.flowstateManager.onPlayerMovement();
+            }
+        }
+        
         // Update walking sound
         this.updateWalkingSound();
     }

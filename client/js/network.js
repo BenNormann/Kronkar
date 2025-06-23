@@ -229,19 +229,51 @@ class NetworkManager {
         // Player respawned
         this.socket.on('playerRespawned', (data) => {
             if (data.playerId === this.playerId) {
+                console.log('You respawned');
                 const spawnPos = new BABYLON.Vector3(
                     data.player.position.x,
                     data.player.position.y,
                     data.player.position.z
                 );
                 this.game.player.respawn(spawnPos);
-                console.log('Player respawned by server at:', spawnPos.toString());
             } else {
-                // Update remote player
+                console.log('Player respawned:', data.playerId);
                 const remotePlayer = this.game.remotePlayers.get(data.playerId);
                 if (remotePlayer) {
                     remotePlayer.updateFromServer(data.player);
                 }
+            }
+        });
+        
+        // Bot networking events
+        this.socket.on('botUpdate', (data) => {
+            // Update bot position from network
+            const bot = this.game.bots ? this.game.bots.get(data.botId) : null;
+            if (bot && !bot.isNetworkHost) {
+                // Only update if this client doesn't own the bot
+                bot.updateFromNetwork(data);
+            }
+        });
+        
+        this.socket.on('botSpawned', (data) => {
+            // Another client spawned a bot - create it locally
+            if (!this.game.bots) this.game.bots = new Map();
+            
+            console.log('Remote bot spawned:', data.botId);
+            const bot = new BotPlayer(this.game, data.botId);
+            bot.isNetworkHost = false; // Mark as remote bot
+            bot.position = new BABYLON.Vector3(data.position.x, data.position.y, data.position.z);
+            bot.username = data.username;
+            this.game.bots.set(data.botId, bot);
+        });
+        
+        this.socket.on('botRemoved', (data) => {
+            // Another client removed a bot
+            if (this.game.bots && this.game.bots.has(data.botId)) {
+                const bot = this.game.bots.get(data.botId);
+                bot.dispose();
+                this.game.bots.delete(data.botId);
+                console.log('Remote bot removed:', data.botId);
             }
         });
         
@@ -309,12 +341,10 @@ class NetworkManager {
     }
     
     sendUsernameUpdate(username) {
-        if (!this.connected || !this.socket) return;
-        
-        this.socket.emit('usernameUpdate', {
-            username: username
-        });
-        console.log('Sent username update:', username);
+        if (this.connected && this.socket) {
+            this.socket.emit('usernameUpdate', { username: username });
+            console.log('Sent username update:', username);
+        }
     }
     
     updateConnectionStatus(status, message) {
@@ -356,5 +386,36 @@ class NetworkManager {
             this.socket = null;
         }
         this.connected = false;
+    }
+    
+    // Bot networking functions
+    sendBotUpdate(botId, botData) {
+        if (this.connected && this.socket) {
+            this.socket.emit('botUpdate', {
+                botId: botId,
+                position: botData.position,
+                rotation: botData.rotation,
+                alive: botData.alive,
+                health: botData.health
+            });
+        }
+    }
+    
+    sendBotSpawned(botId, botData) {
+        if (this.connected && this.socket) {
+            this.socket.emit('botSpawned', {
+                botId: botId,
+                position: botData.position,
+                username: botData.username
+            });
+            console.log('Sent bot spawn notification:', botId);
+        }
+    }
+    
+    sendBotRemoved(botId) {
+        if (this.connected && this.socket) {
+            this.socket.emit('botRemoved', { botId: botId });
+            console.log('Sent bot removal notification:', botId);
+        }
     }
 } 

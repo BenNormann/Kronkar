@@ -184,6 +184,22 @@ io.on('connection', (socket) => {
       });
     }
   });
+  
+  // Bot networking relay
+  socket.on('botUpdate', (data) => {
+    // Relay bot position updates to all other clients
+    socket.broadcast.emit('botUpdate', data);
+  });
+  
+  socket.on('botSpawned', (data) => {
+    // Relay bot spawn notification to all other clients
+    socket.broadcast.emit('botSpawned', data);
+  });
+  
+  socket.on('botRemoved', (data) => {
+    // Relay bot removal notification to all other clients
+    socket.broadcast.emit('botRemoved', data);
+  });
 
   // Handle disconnection
   socket.on('disconnect', () => {

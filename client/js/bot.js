@@ -16,6 +16,7 @@ class BotPlayer extends RemotePlayer {
         
         // Mark as bot
         this.isBot = true;
+        this.isNetworkHost = true; // This client owns/controls this bot
         
         // Copy EXACT movement properties from Player class
         this.velocity = new BABYLON.Vector3(0, 0, 0);
@@ -57,7 +58,31 @@ class BotPlayer extends RemotePlayer {
         this.lastJumpTime = 0;
         this.jumpCooldown = 2000; // Jump every 2 seconds max
         
+        // Enhanced AI timing properties for wall avoidance
+        this.lastInputUpdate = 0;
+        this.inputUpdateInterval = 3000; // Reduced from 2000ms - update movement less frequently
+        this.lastMovementPattern = null; // Track movement pattern changes
+        
+        // Performance optimization properties (smart optimizations that preserve functionality)
+        this.lastWallCheck = 0;
+        this.wallCheckInterval = 1000; // Check walls every 1 second instead of constantly
+        this.cachedWallDetection = {}; // Cache wall detection results
+        this.updateCounter = 0; // For throttling expensive operations
+        this.lastNetworkUpdate = 0;
+        this.networkUpdateInterval = 100; // Network updates every 100ms (was every frame)
+        
+        // Collision optimization - reuse objects to reduce garbage collection
+        this.tempRay = new BABYLON.Ray(new BABYLON.Vector3(), new BABYLON.Vector3(), 100);
+        this.tempVector = new BABYLON.Vector3(0, 0, 0);
+        this.tempVector2 = new BABYLON.Vector3(0, 0, 0);
+        this.tempVector3 = new BABYLON.Vector3(0, 0, 0);
+        
+        // Reduce physics accuracy slightly for performance (bots don't need perfect physics)
+        this.physicsAccuracy = 0.8; // 80% accuracy vs 100% for players
+        
         // Shooting properties
+        this.lastShot = 0;
+        this.fireRate = 800; // Fire every 800ms when targeting
         this.lastShootTime = 0;
         this.shootCooldown = 1000; // Shoot every 1 second when targeting
         this.shootChance = 0.8; // 80% chance to shoot when has target
@@ -109,6 +134,13 @@ class BotPlayer extends RemotePlayer {
             return;
         }
         
+        // Check if bot has fallen off the map
+        if (this.position.y < -65) {
+            console.log(`Bot ${this.username} fell off the map (y: ${this.position.y.toFixed(2)}), respawning...`);
+            this.respawn();
+            return;
+        }
+        
         // Update AI input simulation
         this.updateAIInputs(deltaTime);
         
@@ -121,33 +153,200 @@ class BotPlayer extends RemotePlayer {
     
     // AI input simulation - randomly press keys like a human would
     updateAIInputs(deltaTime) {
-        const currentTime = performance.now();
+        if (!this.alive) return;
         
-        // Update targeting system
-        this.updateTargeting(currentTime);
+        const currentTime = Date.now();
+        this.updateCounter++;
         
-        // Change direction periodically (less often when targeting)
-        const directionInterval = this.currentTarget ? 
-            this.directionChangeInterval * 2 : // Move less when focusing on target
-            this.directionChangeInterval;
+        // Optimize expensive operations frequency without breaking functionality
+        const doTargetingUpdate = this.updateCounter % 20 === 0; // Every 20 frames (~0.33s at 60fps)
+        const doWallUpdate = currentTime - this.lastWallCheck > this.wallCheckInterval;
+        
+        // Update targeting system (reduced frequency but still functional)
+        if (doTargetingUpdate) {
+            this.updateTargeting(currentTime);
+        }
+        
+        // Enhanced movement generation with wall avoidance (cached when possible)
+        if (currentTime - this.lastInputUpdate > this.inputUpdateInterval) {
+            // Update wall detection cache periodically
+            if (doWallUpdate) {
+                this.cachedWallDetection = this.detectWallsAroundBot();
+                this.lastWallCheck = currentTime;
+            }
             
-        if (currentTime - this.lastDirectionChange > directionInterval) {
-            this.generateRandomInputs();
-            this.lastDirectionChange = currentTime;
+            // Check for immediate wall collision danger using cached data when available
+            const emergencyAvoidance = this.checkEmergencyWallAvoidance();
+            
+            if (emergencyAvoidance) {
+                Object.assign(this.keys, emergencyAvoidance);
+                console.log(`Bot ${this.username} emergency wall avoidance activated`);
+            } else {
+                this.generateRandomInputs();
+            }
+            
+            this.lastInputUpdate = currentTime;
         }
         
-        // Random jumping
-        if (currentTime - this.lastJumpTime > this.jumpCooldown && Math.random() < 0.1) {
-            this.keys.jump = true;
-            this.lastJumpTime = currentTime;
-        } else {
-            this.keys.jump = false;
+        // Dynamic movement adjustment (use cached data when available)
+        if (this.isMoving && Object.keys(this.cachedWallDetection).length > 0) {
+            this.adjustMovementForWalls();
         }
         
-        // Targeted shooting
-        if (this.currentTarget && currentTime - this.lastShootTime > this.shootCooldown && Math.random() < this.shootChance) {
+        // Handle shooting (slightly reduced frequency)
+        if (this.currentTarget && currentTime - this.lastShot > this.fireRate) {
             this.shootAtTarget();
-            this.lastShootTime = currentTime;
+            this.lastShot = currentTime;
+        }
+    }
+    
+    // Check for immediate wall collision danger requiring emergency action
+    checkEmergencyWallAvoidance() {
+        if (!this.camera || !this.scene) return null;
+        
+        // Get current movement direction
+        const movementVector = this.getCurrentMovementVector();
+        if (movementVector.length() < 0.1) return null; // Not moving
+        
+        // Cast a forward ray in the current movement direction with earlier detection
+        const rayDistance = 5.0; // Increased from 3.0 for earlier detection
+        const rayHeight = 1.5;
+        
+        // Position slightly in front for better collision prediction
+        this.tempVector.copyFrom(this.position);
+        this.tempVector.y += rayHeight;
+        this.tempVector.addInPlace(movementVector.scale(0.5)); // Look ahead 0.5 units
+        
+        // Transform movement direction to world space
+        this.camera.getDirectionToRef(movementVector, this.tempVector2);
+        this.tempVector2.y = 0;
+        this.tempVector2.normalize();
+        
+        // Reuse ray object
+        this.tempRay.origin.copyFrom(this.tempVector);
+        this.tempRay.direction.copyFrom(this.tempVector2);
+        this.tempRay.length = rayDistance;
+        
+        // Use cached mesh filter if available
+        const meshFilter = this.meshFilter || ((mesh) => {
+            return mesh.checkCollisions && 
+                   !mesh.name.includes('bullet') && 
+                   !mesh.name.includes('ui_') && 
+                   (!mesh.metadata || (!mesh.metadata.isWeapon && !mesh.metadata.isPlayerMesh));
+        });
+        
+        const hit = this.scene.pickWithRay(this.tempRay, meshFilter);
+        
+        if (hit.hit && hit.distance < 2.5) { // Emergency threshold increased from 2.0
+            console.log(`Bot ${this.username} emergency wall detected at distance: ${hit.distance.toFixed(2)}`);
+            return this.findEmergencyEscapeRoute(hit);
+        }
+        
+        return null;
+    }
+    
+    getCurrentMovementVector() {
+        const movement = new BABYLON.Vector3(0, 0, 0);
+        
+        if (this.keys.forward) movement.z += 1;
+        if (this.keys.backward) movement.z -= 1;
+        if (this.keys.left) movement.x -= 1;
+        if (this.keys.right) movement.x += 1;
+        
+        return movement.normalize();
+    }
+    
+    findEmergencyEscapeRoute(wallHit) {
+        if (!this.camera || !this.scene) return null;
+        
+        // Test escape directions in order of preference
+        const escapeDirections = [
+            { keys: { left: true }, direction: new BABYLON.Vector3(-1, 0, 0), priority: 1 },
+            { keys: { right: true }, direction: new BABYLON.Vector3(1, 0, 0), priority: 1 },
+            { keys: { backward: true }, direction: new BABYLON.Vector3(0, 0, -1), priority: 2 },
+            { keys: { left: true, backward: true }, direction: new BABYLON.Vector3(-0.707, 0, -0.707), priority: 3 },
+            { keys: { right: true, backward: true }, direction: new BABYLON.Vector3(0.707, 0, -0.707), priority: 3 }
+        ];
+        
+        // Sort by priority (lower number = higher priority)
+        escapeDirections.sort((a, b) => a.priority - b.priority);
+        
+        for (const escape of escapeDirections) {
+            // Transform direction to world space
+            this.camera.getDirectionToRef(escape.direction, this.tempVector3);
+            this.tempVector3.y = 0;
+            this.tempVector3.normalize();
+            
+            // Test escape direction with a longer ray for better planning
+            this.tempVector.copyFrom(this.position);
+            this.tempVector.y += 1.5;
+            
+            this.tempRay.origin.copyFrom(this.tempVector);
+            this.tempRay.direction.copyFrom(this.tempVector3);
+            this.tempRay.length = 4.0; // Longer escape planning distance
+            
+            const escapeHit = this.scene.pickWithRay(this.tempRay, this.meshFilter);
+            
+            // If this direction is clear or the obstacle is far enough
+            if (!escapeHit.hit || escapeHit.distance > 3.0) {
+                console.log(`Bot ${this.username} found escape route: ${Object.keys(escape.keys).join('+')}`);
+                return escape.keys;
+            }
+        }
+        
+        // If all escape routes are blocked, stop and back up
+        console.log(`Bot ${this.username} completely surrounded, backing up`);
+        return { backward: true };
+    }
+    
+    adjustMovementForWalls() {
+        if (!this.camera || !this.scene || Object.keys(this.cachedWallDetection).length === 0) return;
+        
+        const wallData = this.cachedWallDetection;
+        let adjustmentMade = false;
+        
+        // Predictive wall avoidance - adjust movement before hitting walls
+        if (this.keys.forward && wallData.forward && wallData.forward.distance < 3.5) {
+            // If forward path is blocked, try diagonal movement
+            if (!wallData.forwardLeft || !wallData.forwardLeft.tooClose) {
+                this.keys.left = true;
+                adjustmentMade = true;
+            } else if (!wallData.forwardRight || !wallData.forwardRight.tooClose) {
+                this.keys.right = true;
+                adjustmentMade = true;
+            } else {
+                // Both diagonals blocked, stop forward movement
+                this.keys.forward = false;
+                adjustmentMade = true;
+            }
+        }
+        
+        // Prevent strafing into walls
+        if (this.keys.left && wallData.left && wallData.left.tooClose) {
+            this.keys.left = false;
+            // Try forward or backward movement instead
+            if (!wallData.forward || wallData.forward.distance > 2.5) {
+                this.keys.forward = true;
+            }
+            adjustmentMade = true;
+        }
+        
+        if (this.keys.right && wallData.right && wallData.right.tooClose) {
+            this.keys.right = false;
+            // Try forward or backward movement instead
+            if (!wallData.forward || wallData.forward.distance > 2.5) {
+                this.keys.forward = true;
+            }
+            adjustmentMade = true;
+        }
+        
+        // Corner detection and avoidance
+        if (wallData.forwardLeft && wallData.forwardLeft.tooClose && 
+            wallData.forwardRight && wallData.forwardRight.tooClose) {
+            // In a corner, back out
+            this.keys.forward = false;
+            this.keys.backward = true;
+            adjustmentMade = true;
         }
     }
     
@@ -160,30 +359,44 @@ class BotPlayer extends RemotePlayer {
         this.keys.right = false;
         this.keys.sprint = false;
         
-        // Choose random movement pattern
-        const movementPatterns = [
-            // Basic movements
-            { forward: true },                              // Move forward
-            { backward: true },                             // Move backward  
-            { left: true },                                 // Strafe left
-            { right: true },                                // Strafe right
-            
-            // Diagonal movements
-            { forward: true, left: true },                  // Forward-left
-            { forward: true, right: true },                 // Forward-right
-            { backward: true, left: true },                 // Backward-left
-            { backward: true, right: true },                // Backward-right
-            
-            // Sprint patterns
-            { forward: true, sprint: true },                // Sprint forward
-            { forward: true, left: true, sprint: true },    // Sprint diagonally
-            { forward: true, right: true, sprint: true },   // Sprint diagonally
-            
-            // Stationary (stop moving)
-            {},                                             // No movement
-        ];
+        // Use cached wall detection for performance
+        const wallDetection = this.cachedWallDetection || {};
         
-        const pattern = movementPatterns[Math.floor(Math.random() * movementPatterns.length)];
+        // Simplified movement patterns for performance
+        const safePatterns = [];
+        
+        // Basic movements - only add if direction is clear
+        if (!wallDetection.forward?.tooClose) {
+            safePatterns.push({ forward: true });
+            safePatterns.push({ forward: true, sprint: true }); // Sprint if safe
+        }
+        
+        if (!wallDetection.backward?.tooClose) {
+            safePatterns.push({ backward: true });
+        }
+        
+        if (!wallDetection.left?.tooClose) {
+            safePatterns.push({ left: true });
+        }
+        
+        if (!wallDetection.right?.tooClose) {
+            safePatterns.push({ right: true });
+        }
+        
+        // Simplified diagonal movements (only forward combinations for performance)
+        if (!wallDetection.forward?.tooClose && !wallDetection.left?.tooClose) {
+            safePatterns.push({ forward: true, left: true });
+        }
+        
+        if (!wallDetection.forward?.tooClose && !wallDetection.right?.tooClose) {
+            safePatterns.push({ forward: true, right: true });
+        }
+        
+        // Stationary option
+        safePatterns.push({});
+        
+        // Select random pattern from available safe options
+        const pattern = safePatterns[Math.floor(Math.random() * safePatterns.length)];
         
         // Apply the chosen pattern
         Object.assign(this.keys, pattern);
@@ -194,6 +407,69 @@ class BotPlayer extends RemotePlayer {
             console.log(`Bot ${this.username} changed movement pattern`);
             this.lastMovementPattern = patternKey;
         }
+    }
+    
+    // Detect walls in key directions around the bot (optimized but functional)
+    detectWallsAroundBot() {
+        if (!this.camera || !this.scene) return {};
+        
+        // Increased detection distance for better planning
+        const rayDistance = 4.5; // Increased from 3.0
+        const rayHeight = 1.5;
+        
+        // Reuse temp vector for position calculation
+        this.tempVector.copyFrom(this.position);
+        this.tempVector.y += rayHeight;
+        
+        // Enhanced direction set with better diagonal coverage
+        const directions = {
+            forward: new BABYLON.Vector3(0, 0, 1),
+            backward: new BABYLON.Vector3(0, 0, -1),
+            left: new BABYLON.Vector3(-1, 0, 0),
+            right: new BABYLON.Vector3(1, 0, 0),
+            forwardLeft: new BABYLON.Vector3(-0.707, 0, 0.707),
+            forwardRight: new BABYLON.Vector3(0.707, 0, 0.707),
+            backwardLeft: new BABYLON.Vector3(-0.707, 0, -0.707), // Added back for better corner detection
+            backwardRight: new BABYLON.Vector3(0.707, 0, -0.707)  // Added back for better corner detection
+        };
+        
+        const wallDetection = {};
+        
+        // Optimized mesh filter (cached function to avoid recreation)
+        if (!this.meshFilter) {
+            this.meshFilter = (mesh) => {
+                return mesh.checkCollisions && 
+                       !mesh.name.includes('bullet') && 
+                       !mesh.name.includes('ui_') && 
+                       (!mesh.metadata || (!mesh.metadata.isWeapon && !mesh.metadata.isPlayerMesh && !mesh.metadata.isBot));
+            };
+        }
+        
+        // Transform directions and cast rays
+        Object.keys(directions).forEach(dirName => {
+            // Reuse temp vectors
+            this.tempVector2.copyFrom(directions[dirName]);
+            this.camera.getDirectionToRef(this.tempVector2, this.tempVector2);
+            this.tempVector2.y = 0;
+            this.tempVector2.normalize();
+            
+            // Reuse ray object to reduce garbage collection
+            this.tempRay.origin.copyFrom(this.tempVector);
+            this.tempRay.direction.copyFrom(this.tempVector2);
+            this.tempRay.length = rayDistance;
+            
+            const hit = this.scene.pickWithRay(this.tempRay, this.meshFilter);
+            
+            wallDetection[dirName] = {
+                hasWall: hit.hit,
+                distance: hit.hit ? hit.distance : rayDistance,
+                tooClose: hit.hit && hit.distance < 2.0,  // Immediate danger
+                warning: hit.hit && hit.distance < 3.0,   // Warning zone
+                safe: !hit.hit || hit.distance > 3.5      // Safe zone
+            };
+        });
+        
+        return wallDetection;
     }
     
     // Targeting system
@@ -401,6 +677,9 @@ class BotPlayer extends RemotePlayer {
     updateBotMovement(deltaTime) {
         if (!this.keys || !this.alive) return;
         
+        // Store previous position for networking (reuse temp vector)
+        this.tempVector3.copyFrom(this.position);
+        
         // Calculate movement vector
         let moveVector = new BABYLON.Vector3(0, 0, 0);
         
@@ -471,21 +750,21 @@ class BotPlayer extends RemotePlayer {
             return;
         }
         
-        // OPTIMIZED COLLISION DETECTION - Reduced raycasts with early exits
+        // OPTIMIZED COLLISION DETECTION - Reduced accuracy for bots (they don't need perfect physics)
         let newPosition = this.position.clone();
         
-        // Player collision capsule parameters - EXACT SAME AS PLAYER
-        const playerRadius = 1.2; // Player collision radius
-        const playerHeight = 3.0; // Player collision height
-        const stepHeight = 100.0; // Maximum step height player can walk over
+        // Reduced collision parameters for bots (good enough accuracy)
+        const playerRadius = 1.2 * this.physicsAccuracy; // Slightly smaller for performance
+        const playerHeight = 3.0; 
+        const stepHeight = 100.0; 
         
-        // Cache mesh filter for better performance - EXACT SAME AS PLAYER
-        const meshFilter = (mesh) => {
+        // Optimized mesh filter (reuse cached version)
+        const meshFilter = this.meshFilter || ((mesh) => {
             return mesh.checkCollisions && mesh.name !== 'bullet' && mesh.name !== 'hitEffect' && 
                    !mesh.name.startsWith('ui_') && (!mesh.metadata || !mesh.metadata.isWeapon);
-        };
+        });
         
-        // Step 1: Optimized horizontal movement with fewer sphere checks - EXACT SAME AS PLAYER
+        // Step 1: Optimized horizontal movement - fewer checks for bots
         const horizontalDistance = Math.sqrt(moveDistance.x * moveDistance.x + moveDistance.z * moveDistance.z);
         if (horizontalDistance > 0.001) {
             const moveDir = new BABYLON.Vector3(moveDistance.x, 0, moveDistance.z).normalize();
@@ -495,22 +774,19 @@ class BotPlayer extends RemotePlayer {
                 this.position.z + moveDistance.z
             );
             
-            // Reduced height checks - only check critical levels
+            // Reduced height checks for bots - only check one height for performance
             let canMoveHorizontal = true;
-            const checkHeights = [1.0, 2.5]; // Bottom and top (removed middle for performance)
+            const checkHeight = 1.5; // Single height check at eye level
             
-            for (let height of checkHeights) {
-                // Single raycast check for thin walls (more efficient than scene.pick)
-                const rayToTarget = new BABYLON.Ray(
-                    new BABYLON.Vector3(this.position.x, this.position.y + height, this.position.z),
-                    moveDir
-                );
-                const rayHit = this.scene.pickWithRay(rayToTarget, meshFilter);
-                
-                if (rayHit.hit && rayHit.distance < horizontalDistance + playerRadius) {
-                    canMoveHorizontal = false;
-                    break; // Early exit - no need to check remaining heights
-                }
+            // Reuse ray object
+            this.tempRay.origin.set(this.position.x, this.position.y + checkHeight, this.position.z);
+            this.tempRay.direction.copyFrom(moveDir);
+            this.tempRay.length = horizontalDistance + playerRadius;
+            
+            const rayHit = this.scene.pickWithRay(this.tempRay, meshFilter);
+            
+            if (rayHit.hit && rayHit.distance < horizontalDistance + playerRadius) {
+                canMoveHorizontal = false;
             }
             
             if (canMoveHorizontal) {
@@ -518,32 +794,32 @@ class BotPlayer extends RemotePlayer {
                 newPosition.x = targetHorizontalPos.x;
                 newPosition.z = targetHorizontalPos.z;
             } else {
-                // Try wall sliding by testing X and Z movement separately
+                // Simplified wall sliding for bots (good enough)
                 let slideMovement = new BABYLON.Vector3(0, 0, 0);
                 
-                // Test X movement alone (only one height check for performance)
+                // Test X movement alone
                 if (Math.abs(moveDistance.x) > 0.001) {
-                    const xRay = new BABYLON.Ray(
-                        new BABYLON.Vector3(this.position.x, this.position.y + 1.5, this.position.z),
-                        new BABYLON.Vector3(Math.sign(moveDistance.x), 0, 0)
-                    );
-                    const xHit = this.scene.pickWithRay(xRay, meshFilter);
+                    this.tempRay.origin.set(this.position.x, this.position.y + 1.5, this.position.z);
+                    this.tempRay.direction.set(Math.sign(moveDistance.x), 0, 0);
+                    this.tempRay.length = Math.abs(moveDistance.x) + playerRadius;
+                    
+                    const xHit = this.scene.pickWithRay(this.tempRay, meshFilter);
                     
                     if (!xHit.hit || xHit.distance >= Math.abs(moveDistance.x) + playerRadius) {
-                        slideMovement.x = moveDistance.x * 0.9; // Slightly damped sliding
+                        slideMovement.x = moveDistance.x * 0.9;
                     }
                 }
                 
-                // Test Z movement alone (only one height check for performance)
+                // Test Z movement alone
                 if (Math.abs(moveDistance.z) > 0.001) {
-                    const zRay = new BABYLON.Ray(
-                        new BABYLON.Vector3(this.position.x, this.position.y + 1.5, this.position.z),
-                        new BABYLON.Vector3(0, 0, Math.sign(moveDistance.z))
-                    );
-                    const zHit = this.scene.pickWithRay(zRay, meshFilter);
+                    this.tempRay.origin.set(this.position.x, this.position.y + 1.5, this.position.z);
+                    this.tempRay.direction.set(0, 0, Math.sign(moveDistance.z));
+                    this.tempRay.length = Math.abs(moveDistance.z) + playerRadius;
+                    
+                    const zHit = this.scene.pickWithRay(this.tempRay, meshFilter);
                     
                     if (!zHit.hit || zHit.distance >= Math.abs(moveDistance.z) + playerRadius) {
-                        slideMovement.z = moveDistance.z * 0.9; // Slightly damped sliding
+                        slideMovement.z = moveDistance.z * 0.9;
                     }
                 }
                 
@@ -553,69 +829,41 @@ class BotPlayer extends RemotePlayer {
             }
         }
         
-        // Step 2: Optimized ground detection - drastically reduced raycasts - EXACT SAME AS PLAYER
+        // Step 2: Simplified ground detection for bots (fewer rays but still functional)
         newPosition.y = this.position.y + moveDistance.y;
         
-        // Smart ground check positions - focus on essential points only
+        // Reduced ground check positions for bots (center + 2 edges vs 5 points)
         const footLevel = newPosition.y + 0.1;
         const groundCheckPositions = [
             new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z), // Center (most important)
-            new BABYLON.Vector3(newPosition.x + 0.8, footLevel, newPosition.z), // Right edge
-            new BABYLON.Vector3(newPosition.x - 0.8, footLevel, newPosition.z), // Left edge
-            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z + 0.8), // Forward edge
-            new BABYLON.Vector3(newPosition.x, footLevel, newPosition.z - 0.8), // Backward edge
+            new BABYLON.Vector3(newPosition.x + 0.6, footLevel, newPosition.z), // Right edge (reduced from 0.8)
+            new BABYLON.Vector3(newPosition.x - 0.6, footLevel, newPosition.z)  // Left edge (reduced from 0.8)
+            // Removed forward/backward checks for performance
         ];
-        
-        // Only add stair detection rays when actually moving at reasonable speed
-        if (horizontalDistance > 1.0) {
-            const moveDir = new BABYLON.Vector3(moveDistance.x, 0, moveDistance.z).normalize();
-            const projectionDistance = Math.min(2.0, horizontalDistance * 1.5);
-            
-            // Reduced stair check heights for performance
-            const footRayHeights = [1.0, 2.5]; // Only bottom and top
-            for (let height of footRayHeights) {
-                const forwardFootPos = this.position.add(moveDir.scale(projectionDistance)).add(new BABYLON.Vector3(0, height, 0));
-                groundCheckPositions.push(forwardFootPos);
-            }
-        }
-        
-        // Only add anti-glitch rays at critical positions when needed
-        if (this.velocity.y < -50) { // Only when falling fast enough to glitch
-            const criticalHeights = [0.0]; // Just one height check
-            for (let height of criticalHeights) {
-                const baseY = footLevel + height;
-                // Reduced to 4 directions instead of 8
-                const angleStep = Math.PI / 2; // 90 degrees apart
-                for (let i = 0; i < 4; i++) {
-                    const angle = i * angleStep;
-                    const radius = 0.5;
-                    const x = newPosition.x + Math.cos(angle) * radius;
-                    const z = newPosition.z + Math.sin(angle) * radius;
-                    groundCheckPositions.push(new BABYLON.Vector3(x, baseY, z));
-                }
-            }
-        }
         
         let groundHit = null;
         let closestGroundDistance = Infinity;
         
-        // Check ground positions with early exit for performance
+        // Check ground positions (reuse ray object)
         for (let checkPos of groundCheckPositions) {
-            const groundRay = new BABYLON.Ray(checkPos, new BABYLON.Vector3(0, -1, 0));
-            const hit = this.scene.pickWithRay(groundRay, meshFilter);
+            this.tempRay.origin.copyFrom(checkPos);
+            this.tempRay.direction.set(0, -1, 0);
+            this.tempRay.length = 100;
+            
+            const hit = this.scene.pickWithRay(this.tempRay, meshFilter);
             
             if (hit.hit && hit.distance < closestGroundDistance) {
                 closestGroundDistance = hit.distance;
                 groundHit = hit;
                 
-                // Early exit if we find ground very close (performance optimization)
+                // Early exit if ground is very close
                 if (hit.distance < 1.0) {
                     break;
                 }
             }
         }
         
-        // Apply ground collision with tighter distance check
+        // Apply ground collision
         if (groundHit && closestGroundDistance < 5.0) {
             const groundY = groundHit.pickedPoint.y + 2.0;
             if (newPosition.y <= groundY) {
@@ -632,9 +880,9 @@ class BotPlayer extends RemotePlayer {
         // Update positions
         this.position = newPosition;
         this.camera.position = this.position.clone();
-        this.camera.position.y += this.eyeHeight; // Maintain proper eye height
+        this.camera.position.y += this.eyeHeight;
         
-        // Update rotation for networking - EXACT SAME AS PLAYER
+        // Update rotation for networking
         this.rotation.x = this.camera.rotation.x;
         this.rotation.y = this.camera.rotation.y;
         this.rotation.z = this.camera.rotation.z;
@@ -643,11 +891,28 @@ class BotPlayer extends RemotePlayer {
         this.targetPosition = this.position.clone();
         this.targetRotation = this.rotation.clone();
         
-        // Track movement for walking sound - EXACT SAME AS PLAYER
+        // Optimized network updates (throttled)
+        const currentTime = Date.now();
+        if (this.isNetworkHost && this.game.networkManager && 
+            currentTime - this.lastNetworkUpdate > this.networkUpdateInterval) {
+            
+            // Check if position changed significantly
+            const positionChange = BABYLON.Vector3.Distance(this.tempVector3, this.position);
+            if (positionChange > 0.5) {
+                this.game.networkManager.sendBotUpdate(this.id, {
+                    position: this.position,
+                    rotation: this.rotation,
+                    alive: this.alive,
+                    health: this.health
+                });
+                this.lastNetworkUpdate = currentTime;
+            }
+        }
+        
+        // Track movement for walking sound
         this.isMoving = (this.keys.forward || this.keys.backward || this.keys.left || this.keys.right) && 
                        this.isGrounded && horizontalDistance > 0.005;
         
-        // Update walking sound - EXACT SAME AS PLAYER
         this.updateWalkingSound();
     }
     
@@ -805,14 +1070,38 @@ class BotPlayer extends RemotePlayer {
     
     // Clean disposal
     dispose() {
-        // Dispose of the bot's camera
-        if (this.camera) {
-            this.camera.dispose();
-            this.camera = null;
+        // Notify network about bot removal if this client owns the bot
+        if (this.isNetworkHost && this.game.networkManager) {
+            this.game.networkManager.sendBotRemoved(this.id);
         }
         
-        console.log(`BotPlayer ${this.id} disposed`);
-        super.dispose();
+        // Dispose of all meshes
+        if (this.characterMeshes) {
+            this.characterMeshes.forEach(mesh => {
+                if (mesh) mesh.dispose();
+            });
+        }
+        
+        if (this.mesh) {
+            this.mesh.dispose();
+        }
+        
+        if (this.camera) {
+            this.camera.dispose();
+        }
+        
+        console.log(`Bot ${this.username} (${this.id}) disposed`);
+    }
+    
+    // Update bot from network data (for remote bots)
+    updateFromNetwork(data) {
+        if (this.isNetworkHost) return; // Don't update if this client owns the bot
+        
+        // Update position and rotation from network
+        this.targetPosition = new BABYLON.Vector3(data.position.x, data.position.y, data.position.z);
+        this.targetRotation = { x: data.rotation.x, y: data.rotation.y, z: data.rotation.z };
+        this.alive = data.alive;
+        this.health = data.health;
     }
 }
 
