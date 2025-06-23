@@ -165,7 +165,7 @@ class BotPlayer extends RemotePlayer {
         
         // Update targeting system (reduced frequency but still functional)
         if (doTargetingUpdate) {
-            this.updateTargeting(currentTime);
+        this.updateTargeting(currentTime);
         }
         
         // Enhanced movement generation with wall avoidance (cached when possible)
@@ -183,7 +183,7 @@ class BotPlayer extends RemotePlayer {
                 Object.assign(this.keys, emergencyAvoidance);
                 console.log(`Bot ${this.username} emergency wall avoidance activated`);
             } else {
-                this.generateRandomInputs();
+            this.generateRandomInputs();
             }
             
             this.lastInputUpdate = currentTime;
@@ -785,9 +785,9 @@ class BotPlayer extends RemotePlayer {
             this.tempRay.length = horizontalDistance + playerRadius;
             
             const rayHit = this.scene.pickWithRay(this.tempRay, meshFilter);
-            
-            if (rayHit.hit && rayHit.distance < horizontalDistance + playerRadius) {
-                canMoveHorizontal = false;
+                
+                if (rayHit.hit && rayHit.distance < horizontalDistance + playerRadius) {
+                    canMoveHorizontal = false;
             }
             
             if (canMoveHorizontal) {

@@ -26,7 +26,6 @@ class FlowstateManager {
         // Player highlighting materials
         this.originalMaterials = new Map();
         this.highlightMaterials = new Map();
-        this.missingMaterialWarnings = new Set(); // Track warnings to prevent spam
         
         // Environment materials for dark filter
         this.originalEnvironmentMaterials = new Map();
@@ -503,11 +502,9 @@ class FlowstateManager {
                     // Only store materials that seem valid (not disposed or corrupted)
                     if (mesh.material.name && !mesh.material.name.includes('flowstate_highlight')) {
                         this.originalMaterials.set(mesh.uniqueId, mesh.material);
-                        console.log(`Flowstate: Stored original material for mesh ${mesh.name || mesh.uniqueId}`);
                     } else if (mesh.material) {
                         // Store material even if it doesn't have a name - it might be valid
                         this.originalMaterials.set(mesh.uniqueId, mesh.material);
-                        console.log(`Flowstate: Stored unnamed material for mesh ${mesh.name || mesh.uniqueId}`);
                     }
                 }
                 
@@ -655,22 +652,24 @@ class FlowstateManager {
                     if (originalMaterial) {
                         try {
                             mesh.material = originalMaterial;
-                            console.log(`Flowstate: Restored character mesh ${index} material for player ${playerId}`);
                         } catch (error) {
                             console.warn(`Flowstate: Failed to restore character mesh ${index} material for player ${playerId}:`, error);
                             // If restoration fails, try to recreate the mesh's original material
                             this.attemptMaterialRecreation(mesh, playerId, index);
                         }
                     } else {
-                        // Only log warning once per player to reduce spam
-                        if (!this.missingMaterialWarnings) this.missingMaterialWarnings = new Set();
-                        const warningKey = `${playerId}_character_${index}`;
-                        if (!this.missingMaterialWarnings.has(warningKey)) {
-                            console.warn(`Flowstate: No original material found for character mesh ${index} of player ${playerId}`);
-                            this.missingMaterialWarnings.add(warningKey);
+                        // No original material found - this likely means the player respawned during flowstate
+                        // Just remove the highlight material without restoration
+                        if (mesh.material && mesh.material.name && mesh.material.name.includes('flowstate_highlight')) {
+                            // Create a basic character material as replacement
+                            const basicMaterial = new BABYLON.StandardMaterial(`basic_character_${playerId}_${index}`, mesh.scene);
+                            basicMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.7, 0.6); // Skin-like color
+                            basicMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                            basicMaterial.roughness = 0.8;
+                            basicMaterial.backFaceCulling = true;
+                            mesh.material = basicMaterial;
                         }
-                        // Try to recreate based on the mesh name or other properties
-                        this.attemptMaterialRecreation(mesh, playerId, index);
+                        // Don't log warnings for respawned players - this is expected
                     }
                     
                     // Remove outline
@@ -777,20 +776,23 @@ class FlowstateManager {
                         if (originalMaterial) {
                             try {
                                 mesh.material = originalMaterial;
-                                console.log(`Flowstate: Restored container mesh ${index} material for player ${playerId}`);
                             } catch (error) {
                                 console.warn(`Flowstate: Failed to restore container mesh ${index} material for player ${playerId}:`, error);
                                 this.attemptMaterialRecreation(mesh, playerId, index);
                             }
                         } else {
-                            // Only log warning once per player to reduce spam
-                            if (!this.missingMaterialWarnings) this.missingMaterialWarnings = new Set();
-                            const warningKey = `${playerId}_container_${index}`;
-                            if (!this.missingMaterialWarnings.has(warningKey)) {
-                                console.warn(`Flowstate: No original material found for container mesh ${index} of player ${playerId}`);
-                                this.missingMaterialWarnings.add(warningKey);
+                            // No original material found - this likely means the player respawned during flowstate
+                            // Just remove the highlight material without restoration
+                            if (mesh.material && mesh.material.name && mesh.material.name.includes('flowstate_highlight')) {
+                                // Create a basic character material as replacement
+                                const basicMaterial = new BABYLON.StandardMaterial(`basic_container_${playerId}_${index}`, mesh.scene);
+                                basicMaterial.diffuseColor = new BABYLON.Color3(0.8, 0.7, 0.6); // Skin-like color
+                                basicMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                                basicMaterial.roughness = 0.8;
+                                basicMaterial.backFaceCulling = true;
+                                mesh.material = basicMaterial;
                             }
-                            this.attemptMaterialRecreation(mesh, playerId, index);
+                            // Don't log warnings for respawned players - this is expected
                         }
                         
                         // Remove outline
@@ -1085,4 +1087,11 @@ class FlowstateManager {
             this.rightCountdownBar = null;
         }
     }
+}
+
+// Export for use in other files
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = FlowstateManager;
+} else {
+    window.FlowstateManager = FlowstateManager;
 } 

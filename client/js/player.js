@@ -1717,6 +1717,18 @@ class RemotePlayer {
             this.triggerDeathAnimation();
         }
         
+        // If player just respawned, apply flowstate highlighting if active
+        if (!wasAlive && nowAlive) {
+            console.log(`Remote player ${this.id} respawned`);
+            // Apply flowstate highlighting if flowstate is active
+            if (this.game.flowstateManager && this.game.flowstateManager.isActive) {
+                // Delay to ensure meshes are fully loaded after respawn
+                setTimeout(() => {
+                    this.game.flowstateManager.highlightPlayer(this, this.id);
+                }, 500);
+            }
+        }
+        
         // Update visibility based on alive state (unless death animation is playing)
         if (!this.deathAnimationPlaying) {
             if (this.mesh) {
