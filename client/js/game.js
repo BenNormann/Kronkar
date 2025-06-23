@@ -175,10 +175,12 @@ class Game {
                 console.log("Setting up map container rotation:", mapContainer.rotation.toString());
                 
                 // Parent ALL imported content to this container
+                let parentedMeshCount = 0;
                 dust2Assets.meshes.forEach((mesh, index) => {
                     if (mesh) {
-                        console.log(`Parenting mesh ${index}: ${mesh.name} to container`);
+                        // Removed per-mesh logging - too verbose
                         mesh.parent = mapContainer;
+                        parentedMeshCount++;
                         
                         // Configure collision based on mesh type
                         if (mesh.name === '__root__') {
@@ -232,7 +234,7 @@ class Game {
                     });
                 }
                 
-                console.log("Dust2 map container setup complete - map should be moved down!");
+                console.log(`Successfully parented ${parentedMeshCount} meshes to map container`);
                 
                 // Add invisible floor below the map for collision
                 this.createInvisibleFloor();
@@ -809,6 +811,15 @@ class Game {
     
     // Handle bullet hitting environment
     handleBulletHit(bullet, hit, bulletIndex) {
+        // Count environment hits for summary logging
+        if (!this.environmentHitCount) this.environmentHitCount = 0;
+        this.environmentHitCount++;
+        
+        // Log summary every 10 hits instead of each individual hit
+        if (this.environmentHitCount % 10 === 0) {
+            console.log(`${this.environmentHitCount} bullets hit environment (showing every 10th)`);
+        }
+        
         bullet.hasHit = true;
         
         // Create hit effect at impact point

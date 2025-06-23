@@ -126,7 +126,6 @@ class Player {
             return;
         }
         
-        console.log(`Attaching ${this.currentWeaponConfig.name} to camera...`);
         console.log(`Found ${this.weaponMeshes.length} weapon meshes to attach`);
         
         // Create weapon parent for positioning
@@ -134,19 +133,10 @@ class Player {
         
         // Attach all weapon meshes to the weapon parent
         this.weaponMeshes.forEach((mesh, index) => {
-            console.log(`=== MESH ${index} ===`);
-            console.log(`Name: "${mesh.name}"`);
-            console.log(`Original position: ${mesh.position.toString()}`);
-            console.log(`Original rotation: ${mesh.rotation.toString()}`);
-            console.log(`Original scaling: ${mesh.scaling.toString()}`);
-            console.log(`Has parent: ${mesh.parent ? mesh.parent.name : 'none'}`);
-            
+            // Removed verbose per-mesh logging - too spammy
             mesh.parent = this.weapon;
             mesh.setEnabled(true);
             mesh.isVisible = true; // Explicitly set visible
-            
-            console.log(`After parenting - position: ${mesh.position.toString()}`);
-            console.log(`After parenting - world position: ${mesh.getAbsolutePosition().toString()}`);
         });
         
         // Position weapon using config
@@ -156,12 +146,6 @@ class Player {
         this.weapon.position = new BABYLON.Vector3(config.position.x, config.position.y, config.position.z);
         this.weapon.rotation = new BABYLON.Vector3(config.rotation.x, config.rotation.y, config.rotation.z);
         this.weapon.scaling = new BABYLON.Vector3(config.scale.x, config.scale.y, config.scale.z);
-        
-        // Log mesh information after transformations are applied
-        console.log(`=== WEAPON MESH DETAILS ===`);
-        this.weaponMeshes.forEach((mesh, index) => {
-            console.log(`Mesh ${index}: "${mesh.name}" - Position: ${mesh.position.toString()}`);
-        });
         
         console.log(`Weapon positioned at: ${this.weapon.position.toString()}`);
         console.log(`Weapon rotation: ${this.weapon.rotation.toString()}`);
@@ -176,6 +160,7 @@ class Player {
         console.log(`Weapon parented to camera: ${this.camera.name}`);
         
         // Optimize weapon rendering and disable unnecessary features
+        let optimizedMeshCount = 0;
         this.weaponMeshes.forEach((mesh, index) => {
             mesh.renderingGroupId = 1; // Render after scene
             mesh.isPickable = false; // Don't interfere with shooting raycasts
@@ -200,9 +185,10 @@ class Player {
             mesh.doNotSyncBoundingInfo = true; // Skip bounding info updates
             // DON'T freeze world matrix - weapons need to move with camera
             
-            console.log(`Mesh ${index} final setup: renderingGroup=${mesh.renderingGroupId}, visible=${mesh.isVisible}, enabled=${mesh.isEnabled()}`);
+            optimizedMeshCount++;
         });
         
+        console.log(`Optimized ${optimizedMeshCount} weapon meshes for rendering`);
         console.log(`${this.currentWeaponConfig.name} attachment complete`);
     }
     

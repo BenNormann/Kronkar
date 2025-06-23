@@ -188,7 +188,12 @@ class BotPlayer extends RemotePlayer {
         // Apply the chosen pattern
         Object.assign(this.keys, pattern);
         
-        console.log(`Bot ${this.username} chose movement:`, pattern, 'alive:', this.alive);
+        // Only log when movement pattern actually changes (reduce spam)
+        const patternKey = JSON.stringify(pattern);
+        if (this.lastMovementPattern !== patternKey) {
+            console.log(`Bot ${this.username} changed movement pattern`);
+            this.lastMovementPattern = patternKey;
+        }
     }
     
     // Targeting system
