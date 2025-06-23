@@ -23,7 +23,7 @@ const L118A1Config = {
     projectile: {
         velocity: 4000, // Very high velocity for flat trajectory
         gravity: -3, // Minimal gravity drop for long-range accuracy
-        diameter: 0.6, // Small, precise bullet
+        diameter: 1, // Small, precise bullet
         lifetime: 10.0, // Very long range
         color: { r: 1, g: 0.9, b: 0.2 } // Bright golden tracer
     },

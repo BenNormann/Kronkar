@@ -32,7 +32,7 @@ class FlowstateManager {
         
         // Inactivity timeout system
         this.lastPlayerMovement = 0;
-        this.inactivityTimeout = 5000; // 5 seconds
+        this.inactivityTimeout = 6000; // 5 seconds
         this.countdownActive = false;
         this.countdownStartTime = 0;
         this.flowstateStartTime = 0; // Track when flowstate started
@@ -978,7 +978,7 @@ class FlowstateManager {
         this.leftCountdownBar.style.cssText = `
             position: fixed;
             top: 10px;
-            left: 50%;
+            right: 50%;
             width: 0px;
             height: 30px;
             background: linear-gradient(90deg, #ff0000, #ff4444);
@@ -995,7 +995,7 @@ class FlowstateManager {
         this.rightCountdownBar.style.cssText = `
             position: fixed;
             top: 10px;
-            left: 49%;
+            left: 50%;
             width: 0px;
             height: 30px;
             background: linear-gradient(90deg, #ff4444, #ff0000);
@@ -1025,10 +1025,8 @@ class FlowstateManager {
         
         // Update bar widths (they grow outward from center to screen edges)
         this.leftCountdownBar.style.width = `${currentWidth}px`;
-        this.leftCountdownBar.style.marginLeft = `-${currentWidth}px`; // Grow to the left
         
         this.rightCountdownBar.style.width = `${currentWidth}px`;
-        // Right bar naturally grows to the right from 50%
         
         // Change color intensity as countdown progresses
         const intensity = 0.3 + (progress * 0.7); // 30% to 100% intensity

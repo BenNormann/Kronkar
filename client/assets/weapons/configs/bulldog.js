@@ -23,7 +23,7 @@ const BulldogConfig = {
     projectile: {
         velocity: 2500, // units/second (increased from 150)
         gravity: -10,
-        diameter: 0.5, // Much larger bullets for visibility and collision
+        diameter: 0.7, // Much larger bullets for visibility and collision
         lifetime: 5.0, // seconds
         color: { r: 1, g: 1, b: 0 } // Yellow bullets
     },
