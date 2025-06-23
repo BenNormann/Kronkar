@@ -304,6 +304,9 @@ class Game {
             // Area 9: Around coordinates (-92, -48, -628)
             new BABYLON.Vector3(-92, 40, -628),
             
+            // Area 10: New spawn point near (-90, -58, -625) moved down 10 units
+            new BABYLON.Vector3(-90, -68, -625),
+            
             // Area 11: Elevated position around (405, 20, -881)
             new BABYLON.Vector3(405, 40, -881)
         ];
@@ -863,6 +866,10 @@ class Game {
                  if (wasAlive && !remotePlayer.alive) {
                      console.log(`Bot ${remotePlayer.username} was killed!`);
                      
+                     // Increment score only on actual kill
+                     this.player.score++;
+                     console.log('Your score is now:', this.player.score);
+                     
                      // Trigger fly-up death animation (same as Player/RemotePlayer)
                      if (remotePlayer.triggerDeathAnimation) {
                          remotePlayer.triggerDeathAnimation();
@@ -896,9 +903,6 @@ class Game {
                         this.uiManager.showKillFeed('You', remotePlayer.username);
                     }
                 }
-                
-                this.player.score++;
-                console.log('Your score is now:', this.player.score);
             }
         } else {
             // For remote players, send damage to server (server will validate)

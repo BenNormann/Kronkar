@@ -146,7 +146,8 @@ class UIManager {
             } else if (healthPercentage < 50) {
                 this.healthBar.style.background = 'linear-gradient(90deg, #ff0000, #ffff00)';
             } else {
-                this.healthBar.style.background = 'linear-gradient(90deg, #ff0000, #ffff00, #00ff00)';
+                // Use the original red gradient from CSS for healthy state
+                this.healthBar.style.background = 'linear-gradient(90deg, #ff0000, #ff4444)';
             }
         }
     }
@@ -381,6 +382,7 @@ class UIManager {
                 id: this.game.networkManager.playerId,
                 name: this.getCurrentUsername(),
                 score: this.game.player.score || 0,
+                deaths: this.game.player.deaths || 0,
                 alive: this.game.player.alive
             });
         }
@@ -391,6 +393,7 @@ class UIManager {
                 id: playerId,
                 name: remotePlayer.username || `Player ${playerId.slice(-4)}`,
                 score: remotePlayer.score || 0,
+                deaths: remotePlayer.deaths || 0,
                 alive: remotePlayer.alive
             });
         });
@@ -402,6 +405,7 @@ class UIManager {
                     id: botId,
                     name: bot.username || `Bot ${botId.slice(-4)}`,
                     score: bot.score || 0,
+                    deaths: bot.deaths || 0,
                     alive: bot.alive,
                     isBot: true
                 });
@@ -429,6 +433,7 @@ class UIManager {
                 <td class="leaderboard-rank">${rank}</td>
                 <td class="leaderboard-player">${player.name}${isCurrentPlayer ? ' (You)' : ''}${player.isBot ? ' [BOT]' : ''}</td>
                 <td class="leaderboard-score">${player.score}</td>
+                <td class="leaderboard-deaths">${player.deaths}</td>
                 <td class="leaderboard-status">
                     <span class="${player.alive ? 'status-alive' : 'status-dead'}">
                         ${player.alive ? 'Alive' : 'Dead'}
@@ -442,7 +447,7 @@ class UIManager {
         // If no players, show message
         if (players.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="4" style="text-align: center; color: #ccc;">No players in game</td>';
+            row.innerHTML = '<td colspan="5" style="text-align: center; color: #ccc;">No players in game</td>';
             this.leaderboardBody.appendChild(row);
         }
     }

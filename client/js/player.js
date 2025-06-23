@@ -11,6 +11,7 @@ class Player {
         this.health = 100;
         this.alive = true;
         this.score = 0; // Kill score tracking
+        this.deaths = 0; // Death count tracking
         
         // Respawn system
         this.respawnRequested = false;
@@ -1083,6 +1084,7 @@ class Player {
     
     die() {
         this.alive = false;
+        this.deaths++; // Increment death count
         console.log('Player died');
         
         // Stop walking sound when player dies
@@ -1313,6 +1315,7 @@ class RemotePlayer {
         this.health = playerData.health;
         this.alive = playerData.alive;
         this.score = playerData.score || 0; // Kill score tracking
+        this.deaths = playerData.deaths || 0; // Death count tracking
         this.username = playerData.username || `Player ${this.id.slice(-4)}`; // Username or default
         
         // Weapon tracking (assign random weapon for variety)
@@ -1691,6 +1694,11 @@ class RemotePlayer {
         // Update score if provided
         if (playerData.score !== undefined) {
             this.score = playerData.score;
+        }
+        
+        // Update deaths if provided
+        if (playerData.deaths !== undefined) {
+            this.deaths = playerData.deaths;
         }
         
         // Update weapon if provided (future server enhancement)

@@ -63,27 +63,30 @@
             position: absolute;
             bottom: 20px;
             left: 20px;
-            width: 200px;
-            height: 20px;
+            width: 300px;
+            height: 30px;
             background: rgba(255, 0, 0, 0.3);
             border: 2px solid #fff;
             border-radius: 10px;
             overflow: hidden;
+            z-index: 1000;
         }
 
         #healthFill {
             height: 100%;
-            background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00);
+            background: linear-gradient(90deg, #ff0000, #ff4444);
             width: 100%;
             transition: width 0.3s ease;
+            z-index: 1001;
         }
 
         #healthText {
             position: absolute;
-            bottom: 45px;
-            left: 20px;
-            font-size: 14px;
+            bottom: 24px;
+            left: 25px;
+            font-size: 18px;
             font-weight: bold;
+            z-index: 1002;
         }
 
         #playerCount {
@@ -626,6 +629,7 @@
                         <th class="leaderboard-rank">#</th>
                         <th class="leaderboard-player">Player</th>
                         <th class="leaderboard-score">Kills</th>
+                        <th class="leaderboard-deaths">Deaths</th>
                         <th class="leaderboard-status">Status</th>
                     </tr>
                 </thead>
@@ -634,7 +638,7 @@
                 </tbody>
             </table>
             <div id="leaderboardFooter">
-                Press Tab to close | Score: 1 point per kill
+                Press Tab to close | Score: 1 point per kill | Deaths tracked
             </div>
         </div>
         

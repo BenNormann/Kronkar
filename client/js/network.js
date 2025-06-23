@@ -204,6 +204,18 @@ class NetworkManager {
                 }
             }
             
+            // Handle death counting
+            if (data.victimId === this.playerId) {
+                // Local player died - deaths already incremented in die() method
+                console.log('Your deaths:', this.game.player.deaths);
+            } else {
+                // Remote player died, update their death count with server data
+                const victimPlayer = this.game.remotePlayers.get(data.victimId);
+                if (victimPlayer && data.victimDeaths !== undefined) {
+                    victimPlayer.deaths = data.victimDeaths;
+                }
+            }
+            
             // Show kill feed
             if (this.game.uiManager) {
                 let killerName, victimName;

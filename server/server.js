@@ -40,6 +40,7 @@ const dust2SpawnPoints = [
   { x: -582, y: 40, z: -569 },
   { x: -597, y: 30, z: -409 },
   { x: -92, y: 40, z: -628 },
+  { x: -90, y: -68, z: -625 }, // New spawn point moved down 10 units
   { x: 405, y: 40, z: -881 }
 ];
 
@@ -62,6 +63,7 @@ io.on('connection', (socket) => {
     health: gameConfig.maxHealth,
     alive: true,
     score: 0, // Initialize kill score
+    deaths: 0, // Initialize death count
     username: `Player ${socket.id.slice(-4)}`, // Default username
     lastUpdate: Date.now()
   };
@@ -134,17 +136,19 @@ io.on('connection', (socket) => {
       target.health = 0;
       target.alive = false;
       
-      // Increment killer's score
+      // Increment killer's score and victim's deaths
       shooter.score = (shooter.score || 0) + 1;
+      target.deaths = (target.deaths || 0) + 1;
       
       // Notify all players about the kill
       io.emit('playerKilled', {
         killerId: shooterId,
         victimId: targetPlayerId,
-        killerScore: shooter.score
+        killerScore: shooter.score,
+        victimDeaths: target.deaths
       });
       
-      console.log(`Player ${targetPlayerId} killed by ${shooterId}. Killer score: ${shooter.score}`);
+      console.log(`Player ${targetPlayerId} killed by ${shooterId}. Killer score: ${shooter.score}, Victim deaths: ${target.deaths}`);
       
       // Schedule respawn
       setTimeout(() => {

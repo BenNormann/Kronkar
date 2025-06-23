@@ -1033,6 +1033,23 @@ class FlowstateManager {
         this.leftCountdownBar.style.opacity = intensity;
         this.rightCountdownBar.style.opacity = intensity;
         
+        // Fade music volume as countdown progresses (dramatic effect)
+        if (this.backgroundMusic) {
+            // Start fading music at 50% progress, fully fade by 100%
+            const fadeStartProgress = 0.5;
+            let volumeMultiplier = 1.0;
+            
+            if (progress > fadeStartProgress) {
+                const fadeProgress = (progress - fadeStartProgress) / (1.0 - fadeStartProgress);
+                volumeMultiplier = 1.0 - fadeProgress; // Fade from 1.0 to 0.0
+            }
+            
+            // Apply volume multiplier to current flowstate volume
+            const baseFlowstateVolume = this.baseVolume * Math.min(this.killStreak / this.maxKillStreak, 1.0);
+            const fadedVolume = baseFlowstateVolume * volumeMultiplier;
+            this.backgroundMusic.volume = Math.max(0, Math.min(1, fadedVolume));
+        }
+        
         // If countdown complete, reset flowstate
         if (progress >= 1.0) {
             console.log('Flowstate: Inactivity timeout reached, resetting flowstate');

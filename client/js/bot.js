@@ -40,6 +40,7 @@ class BotPlayer extends RemotePlayer {
         
         // Score tracking
         this.score = 0;
+        this.deaths = 0;
         
         // AI input simulation (like a real player)
         this.keys = {
@@ -970,6 +971,9 @@ class BotPlayer extends RemotePlayer {
     die() {
         console.log(`Bot ${this.username} die() called - health: ${this.health}, alive: ${this.alive}`);
         
+        // Increment death count
+        this.deaths++;
+        
         // Clear targeting when dying
         this.currentTarget = null;
         this.targetLostTime = 0;
@@ -983,7 +987,7 @@ class BotPlayer extends RemotePlayer {
             this.health = 0;
         }
         
-        console.log(`Bot ${this.username} after die() - health: ${this.health}, alive: ${this.alive}`);
+        console.log(`Bot ${this.username} after die() - health: ${this.health}, alive: ${this.alive}, deaths: ${this.deaths}`);
         
         // Schedule auto-respawn for bots after 5 seconds
         setTimeout(() => {
