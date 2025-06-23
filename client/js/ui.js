@@ -395,6 +395,19 @@ class UIManager {
             });
         });
         
+        // Add bots (with safety check)
+        if (this.game && this.game.bots && typeof this.game.bots.forEach === 'function') {
+            this.game.bots.forEach((bot, botId) => {
+                players.push({
+                    id: botId,
+                    name: bot.username || `Bot ${botId.slice(-4)}`,
+                    score: bot.score || 0,
+                    alive: bot.alive,
+                    isBot: true
+                });
+            });
+        }
+        
         // Sort by score (descending)
         players.sort((a, b) => b.score - a.score);
         
@@ -414,7 +427,7 @@ class UIManager {
             
             row.innerHTML = `
                 <td class="leaderboard-rank">${rank}</td>
-                <td class="leaderboard-player">${player.name}${isCurrentPlayer ? ' (You)' : ''}</td>
+                <td class="leaderboard-player">${player.name}${isCurrentPlayer ? ' (You)' : ''}${player.isBot ? ' [BOT]' : ''}</td>
                 <td class="leaderboard-score">${player.score}</td>
                 <td class="leaderboard-status">
                     <span class="${player.alive ? 'status-alive' : 'status-dead'}">

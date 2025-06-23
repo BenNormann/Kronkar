@@ -16,6 +16,7 @@ class Game {
         
         // Game objects
         this.remotePlayers = new Map();
+        this.bots = new Map();
         this.bullets = [];
         this.map = null;
         
@@ -285,8 +286,8 @@ class Game {
             // Area 3: Around coordinates (371, -47, -836)
             new BABYLON.Vector3(371, 40, -836),
             
-            // Area 4: Around coordinates (198, -47, -323)
-            new BABYLON.Vector3(198, 40, -323),
+            // Area 4: Around coordinates (198, -47, -323) - FIXED: raised to prevent falling through
+            new BABYLON.Vector3(198, 60, -323),
             
             // Area 6: Around coordinates (-529, -47, -40)
             new BABYLON.Vector3(-529, 40, -40),
@@ -512,6 +513,14 @@ class Game {
                 this.player.switchWeapon('l118a1');
                 this.updateWeaponDropdown('l118a1');
                 event.preventDefault();
+            } else if (event.code === 'Digit7' && this.gameStarted) {
+                // Spawn a bot (for testing)
+                this.spawnBot();
+                event.preventDefault();
+            } else if (event.code === 'Digit8' && this.gameStarted) {
+                // Remove all bots (for testing)
+                this.removeAllBots();
+                event.preventDefault();
             }
         });
     }
@@ -610,6 +619,13 @@ class Game {
         this.remotePlayers.forEach(remotePlayer => {
             remotePlayer.update(deltaTime);
         });
+        
+        // Update bots
+        if (this.bots && this.bots.size > 0) {
+            this.bots.forEach(bot => {
+                bot.update(deltaTime);
+            });
+        }
         
         // Update bullets
         this.updateBullets(deltaTime);
@@ -748,10 +764,13 @@ class Game {
                 if (hitPlayerId === (this.networkManager?.playerId || 'local')) {
                     this.handleLocalPlayerHit(bullet, bulletIndex);
                 } else {
-                    // It's a remote player
+                    // It's a remote player or bot - treat them the same since BotPlayer extends RemotePlayer
                     const remotePlayer = this.remotePlayers.get(hitPlayerId);
-                    if (remotePlayer && remotePlayer.alive) {
-                        this.handlePlayerHit(bullet, remotePlayer, hitPlayerId, bulletIndex);
+                    const bot = this.bots ? this.bots.get(hitPlayerId) : null;
+                    const player = remotePlayer || bot; // Bot is also a RemotePlayer
+                    
+                    if (player && player.alive) {
+                        this.handlePlayerHit(bullet, player, hitPlayerId, bulletIndex);
                     }
                 }
                 return;
@@ -813,20 +832,78 @@ class Game {
             this.audioManager.playDamageSound();
         }
         
-        // Send damage to server (server will validate)
-        if (this.networkManager) {
-            this.networkManager.socket.emit('bulletHit', {
-                bulletId: bullet.id,
-                targetPlayerId: playerId,
-                damage: bullet.damage,
-                shooterId: bullet.shooterId
-            });
+        // Check if this is a bot (local) vs remote player (network)
+        const isBot = remotePlayer.isBot || this.bots?.has(playerId);
+        
+        if (isBot) {
+            // For bots, apply damage locally since they're not networked
+            console.log(`Applying damage to bot ${remotePlayer.username}: ${bullet.damage}`);
+            
+            // Store health before damage to check if this will be a kill
+            const wasAlive = remotePlayer.alive;
+            const healthBefore = remotePlayer.health;
+            
+            remotePlayer.takeDamage(bullet.damage);
+            
+            // Update score and handle kill events for local player
+            if (bullet.shooterId === (this.networkManager?.playerId || 'local')) {
+                                 // Check if bot died from this damage
+                 if (wasAlive && !remotePlayer.alive) {
+                     console.log(`Bot ${remotePlayer.username} was killed!`);
+                     
+                     // Trigger fly-up death animation (same as Player/RemotePlayer)
+                     if (remotePlayer.triggerDeathAnimation) {
+                         remotePlayer.triggerDeathAnimation();
+                     } else {
+                         // Fallback: use updateFromServer method
+                         remotePlayer.updateFromServer({
+                             position: remotePlayer.position,
+                             rotation: remotePlayer.rotation,
+                             health: 0,
+                             alive: false,
+                             score: remotePlayer.score
+                         });
+                     }
+                    
+                    // Play 3D death sound
+                    if (this.audioManager) {
+                        this.audioManager.playRemoteDamageSound(
+                            this.player.position,
+                            remotePlayer.position
+                        );
+                    }
+                    
+                    // Trigger Flowstate system (like network does for kills)
+                    if (this.flowstateManager) {
+                        this.flowstateManager.onKill();
+                        console.log('Flowstate triggered for bot kill');
+                    }
+                    
+                    // Show kill feed
+                    if (this.uiManager) {
+                        this.uiManager.showKillFeed('You', remotePlayer.username);
+                    }
+                }
+                
+                this.player.score++;
+                console.log('Your score is now:', this.player.score);
+            }
+        } else {
+            // For remote players, send damage to server (server will validate)
+            if (this.networkManager) {
+                this.networkManager.socket.emit('bulletHit', {
+                    bulletId: bullet.id,
+                    targetPlayerId: playerId,
+                    damage: bullet.damage,
+                    shooterId: bullet.shooterId
+                });
+            }
         }
         
         // Remove bullet
         this.removeBullet(bulletIndex);
         
-        console.log(`Bullet hit player ${playerId}`);
+        console.log(`Bullet hit ${isBot ? 'bot' : 'player'} ${playerId}`);
     }
     
     // Handle bullet hitting local player
@@ -902,6 +979,58 @@ class Game {
             remotePlayer.dispose();
             this.remotePlayers.delete(playerId);
         }
+    }
+    
+    // Bot management methods
+    spawnBots(count) {
+        for (let i = 0; i < count; i++) {
+            this.spawnBot();
+        }
+        console.log(`Spawned ${count} bots`);
+    }
+    
+    spawnBot() {
+        console.log('Attempting to spawn bot...');
+        
+        // Check if BotPlayer class is available
+        if (typeof BotPlayer === 'undefined') {
+            console.error('BotPlayer class not found! Make sure bot.js is loaded.');
+            return null;
+        }
+        
+        try {
+            const botId = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            console.log(`Creating bot with ID: ${botId}`);
+            
+            const bot = new BotPlayer(this, botId);
+            this.bots.set(botId, bot);
+            
+            console.log(`Bot ${bot.username} (${botId}) spawned successfully`);
+            console.log(`Total bots: ${this.bots.size}`);
+            
+            return bot;
+        } catch (error) {
+            console.error('Error spawning bot:', error);
+            return null;
+        }
+    }
+    
+    removeBot(botId) {
+        const bot = this.bots.get(botId);
+        if (bot) {
+            bot.dispose();
+            this.bots.delete(botId);
+            console.log(`Bot ${botId} removed`);
+        }
+    }
+    
+    removeAllBots() {
+        console.log(`Removing ${this.bots.size} bots...`);
+        this.bots.forEach((bot, botId) => {
+            bot.dispose();
+        });
+        this.bots.clear();
+        console.log('All bots removed');
     }
     
     // Method to get spawn position
@@ -1208,6 +1337,18 @@ class Game {
             }
         });
         this.healthPacks = [];
+        
+        // Dispose bots
+        this.bots.forEach(bot => {
+            bot.dispose();
+        });
+        this.bots.clear();
+        
+        // Dispose remote players
+        this.remotePlayers.forEach(remotePlayer => {
+            remotePlayer.dispose();
+        });
+        this.remotePlayers.clear();
         
         if (this.flowstateManager) {
             this.flowstateManager.dispose();

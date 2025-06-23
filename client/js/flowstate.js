@@ -359,6 +359,65 @@ class FlowstateManager {
     }
     
     updatePlayerHighlighting() {
+        if (!this.isActive) {
+            return;
+        }
+        
+        // Highlight all remote players with red effect
+        if (this.game.remotePlayers) {
+            this.game.remotePlayers.forEach((remotePlayer, playerId) => {
+                this.highlightPlayer(remotePlayer, playerId);
+            });
+        }
+        
+        // Also highlight all bots (since BotPlayer extends RemotePlayer)
+        if (this.game.bots) {
+            this.game.bots.forEach((bot, botId) => {
+                this.highlightPlayer(bot, botId);
+            });
+        }
+    }
+    
+    highlightPlayer(player, playerId) {
+        if (player.alive) {
+            // Ensure name tag stays visible and unaffected
+            if (player.nameTag) {
+                player.nameTag.setEnabled(true);
+                // Preserve name tag material from any changes
+                if (player.nameTag.material && !this.originalMaterials.has(player.nameTag.uniqueId)) {
+                    this.originalMaterials.set(player.nameTag.uniqueId, player.nameTag.material);
+                }
+            }
+            
+            // Apply to main mesh
+            if (player.mesh) {
+                this.applyPlayerHighlight(player.mesh, this.targetIntensity);
+            }
+            
+            // Apply to character meshes if they exist
+            if (player.characterMeshes && player.characterMeshes.length > 0) {
+                player.characterMeshes.forEach(mesh => {
+                    if (mesh) {
+                        this.applyPlayerHighlight(mesh, this.targetIntensity);
+                    }
+                });
+            }
+            
+            // Apply to character container if it exists
+            if (player.characterContainer) {
+                const childMeshes = player.characterContainer.getChildMeshes();
+                childMeshes.forEach(mesh => {
+                    // Skip name tag meshes
+                    if (mesh && mesh.material && (!mesh.name || !mesh.name.includes('nameTag'))) {
+                        this.applyPlayerHighlight(mesh, this.targetIntensity);
+                    }
+                });
+            }
+        }
+    }
+
+    // Keep the old method for compatibility
+    updatePlayerHighlightingOld() {
         if (!this.isActive || !this.game.remotePlayers) {
             return;
         }
@@ -506,6 +565,120 @@ class FlowstateManager {
     }
     
     resetPlayerHighlighting() {
+        console.log('Flowstate: Resetting player highlighting');
+        
+        // Restore original materials for all remote player meshes
+        if (this.game.remotePlayers) {
+            this.game.remotePlayers.forEach((remotePlayer, playerId) => {
+                this.resetPlayerMaterials(remotePlayer, playerId);
+            });
+        }
+        
+        // Also restore materials for all bot meshes
+        if (this.game.bots) {
+            this.game.bots.forEach((bot, botId) => {
+                this.resetPlayerMaterials(bot, botId);
+            });
+        }
+        
+        // Clean up highlight materials
+        this.highlightMaterials.forEach((material, meshId) => {
+            if (material && material.dispose) {
+                try {
+                    material.dispose();
+                } catch (error) {
+                    console.warn('Flowstate: Error disposing highlight material:', error);
+                }
+            }
+        });
+        this.highlightMaterials.clear();
+        this.originalMaterials.clear();
+        
+        console.log('Flowstate: Player highlighting reset complete');
+    }
+    
+    resetPlayerMaterials(player, playerId) {
+        // Skip players that are dead or in death animation - they shouldn't be highlighted anyway
+        if (!player.alive || player.deathAnimationPlaying) {
+            console.log(`Flowstate: Skipping material restoration for dead player ${playerId}`);
+            return;
+        }
+        
+        // Restore main mesh
+        if (player.mesh) {
+            const originalMaterial = this.originalMaterials.get(player.mesh.uniqueId);
+            if (originalMaterial) {
+                try {
+                    player.mesh.material = originalMaterial;
+                    console.log(`Flowstate: Restored main mesh material for player ${playerId}`);
+                } catch (error) {
+                    console.warn(`Flowstate: Failed to restore main mesh material for player ${playerId}:`, error);
+                }
+            }
+            // Remove outline
+            if (player.mesh.renderOutline !== undefined) {
+                player.mesh.renderOutline = false;
+            }
+        }
+        
+        // Restore character meshes
+        if (player.characterMeshes && player.characterMeshes.length > 0) {
+            player.characterMeshes.forEach((mesh, index) => {
+                if (mesh && mesh.material) {
+                    const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
+                    if (originalMaterial) {
+                        try {
+                            mesh.material = originalMaterial;
+                            console.log(`Flowstate: Restored character mesh ${index} material for player ${playerId}`);
+                        } catch (error) {
+                            console.warn(`Flowstate: Failed to restore character mesh ${index} material for player ${playerId}:`, error);
+                            // If restoration fails, try to recreate the mesh's original material
+                            this.attemptMaterialRecreation(mesh, playerId, index);
+                        }
+                    } else {
+                        console.warn(`Flowstate: No original material found for character mesh ${index} of player ${playerId}`);
+                        // Try to recreate based on the mesh name or other properties
+                        this.attemptMaterialRecreation(mesh, playerId, index);
+                    }
+                    
+                    // Remove outline
+                    if (mesh.renderOutline !== undefined) {
+                        mesh.renderOutline = false;
+                    }
+                }
+            });
+        }
+        
+        // Restore character container meshes
+        if (player.characterContainer) {
+            const childMeshes = player.characterContainer.getChildMeshes();
+            childMeshes.forEach((mesh, index) => {
+                if (mesh && mesh.material) {
+                    const originalMaterial = this.originalMaterials.get(mesh.uniqueId);
+                    if (originalMaterial) {
+                        try {
+                            mesh.material = originalMaterial;
+                            console.log(`Flowstate: Restored container mesh ${index} material for player ${playerId}`);
+                        } catch (error) {
+                            console.warn(`Flowstate: Failed to restore container mesh ${index} material for player ${playerId}:`, error);
+                            this.attemptMaterialRecreation(mesh, playerId, index);
+                        }
+                    } else {
+                        console.warn(`Flowstate: No original material found for container mesh ${index} of player ${playerId}`);
+                        this.attemptMaterialRecreation(mesh, playerId, index);
+                    }
+                    
+                    // Remove outline
+                    if (mesh.renderOutline !== undefined) {
+                        mesh.renderOutline = false;
+                    }
+                }
+            });
+        }
+    }
+
+    // Keep the old method for compatibility  
+    resetPlayerHighlightingOld() {
         if (!this.game.remotePlayers) return;
         
         console.log('Flowstate: Resetting player highlighting');

@@ -331,9 +331,11 @@ class NetworkManager {
             if (count !== undefined) {
                 playerCountElement.textContent = `Players: ${count}`;
             } else {
-                // Count current players
-                const currentCount = this.game.remotePlayers.size + 1; // +1 for local player
-                playerCountElement.textContent = `Players: ${currentCount}`;
+                // Count current players (including bots)
+                const humanCount = this.game.remotePlayers.size + 1; // +1 for local player
+                const botCount = this.game.bots ? this.game.bots.size : 0;
+                const totalCount = humanCount + botCount;
+                playerCountElement.textContent = `Players: ${humanCount} (${botCount} bots)`;
             }
         }
     }
